@@ -21,6 +21,21 @@ export function useAuth() {
   // Login mutation
   const loginMutation = useMutation({
     mutationFn: async ({ email, password }: { email: string; password?: string }) => {
+      // Demo login check
+      if (email === "demo@brasilit.com" && password === "demo123") {
+        const demoUser: User = {
+          id: 1,
+          email: "demo@brasilit.com",
+          name: "Técnico Demo",
+          department: "Assistência Técnica",
+          unit: "PR",
+          coordinator: "Marlon Weingartner",
+          manager: "Elisabete Kudo",
+          regional: "Sul",
+        };
+        return { user: demoUser };
+      }
+
       if (connectionManager.isOnline) {
         return await authApi.login(email, password);
       } else {

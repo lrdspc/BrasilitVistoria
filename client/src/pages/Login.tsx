@@ -116,6 +116,23 @@ export default function Login() {
           Entrar com Google
         </Button>
 
+        <div className="border-t border-white/20 my-6 pt-6">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              setEmail("demo@brasilit.com");
+              setPassword("demo123");
+            }}
+            className="w-full bg-green-600 border-2 border-green-600 text-white hover:bg-green-700 hover:border-green-700 font-semibold text-lg h-12"
+          >
+            Acesso Demo
+          </Button>
+          <p className="text-blue-200 text-xs text-center mt-2">
+            Clique para preencher credenciais de demonstração
+          </p>
+        </div>
+
         <div className="text-center">
           <a href="#" className="text-blue-200 underline text-sm hover:text-white">
             Esqueci minha senha
