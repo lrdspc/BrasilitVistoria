@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { Plus, Search, RefreshCw, FileText, User } from "lucide-react";
@@ -15,11 +15,18 @@ import type { Inspection } from "@shared/schema";
 export default function Dashboard() {
   const [, setLocation] = useLocation();
   const { user, logout } = useAuth();
-  const { forceSync, isSyncing, pendingCount } = useOfflineSync();
+  const { forcSync, isSyncing, pendingCount } = useOfflineSync();
   
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [dateFilter, setDateFilter] = useState("7days");
+
+  // Redirect if not authenticated
+  useEffect(() => {
+    if (!user) {
+      setLocation("/login");
+    }
+  }, [user, setLocation]);
 
   // Fetch inspections
   const { data: inspections = [], isLoading, refetch } = useQuery<Inspection[]>({

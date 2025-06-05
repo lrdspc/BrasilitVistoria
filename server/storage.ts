@@ -185,7 +185,10 @@ export class MemStorage implements IStorage {
     const id = this.currentInspectionId++;
     const now = new Date();
     const inspection: Inspection = { 
-      ...insertInspection, 
+      ...insertInspection,
+      status: insertInspection.status || "pending",
+      clientId: insertInspection.clientId ?? null,
+      totalArea: insertInspection.totalArea || 0,
       id, 
       createdAt: now,
       updatedAt: now
@@ -247,7 +250,7 @@ export class MemStorage implements IStorage {
       ...insertNonConformity,
       description: insertNonConformity.description ?? null,
       notes: insertNonConformity.notes ?? null,
-      photos: insertNonConformity.photos ? Array.from(insertNonConformity.photos) : null,
+      photos: insertNonConformity.photos ? (insertNonConformity.photos as string[]) : null,
       id 
     };
     this.nonConformities.set(id, nonConformity);
@@ -258,7 +261,11 @@ export class MemStorage implements IStorage {
     const nonConformity = this.nonConformities.get(id);
     if (!nonConformity) return undefined;
     
-    const updatedNonConformity = { ...nonConformity, ...updateNonConformity };
+    const updatedNonConformity = { 
+      ...nonConformity, 
+      ...updateNonConformity,
+      photos: updateNonConformity.photos ? (updateNonConformity.photos as string[]) : nonConformity.photos
+    };
     this.nonConformities.set(id, updatedNonConformity);
     return updatedNonConformity;
   }
