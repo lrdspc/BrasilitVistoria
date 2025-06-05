@@ -1,0 +1,168 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: 0 0% 100%;
+  --foreground: 20 14.3% 4.1%;
+  --muted: 60 4.8% 95.9%;
+  --muted-foreground: 25 5.3% 44.7%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 20 14.3% 4.1%;
+  --card: 0 0% 100%;
+  --card-foreground: 20 14.3% 4.1%;
+  --border: 20 5.9% 90%;
+  --input: 20 5.9% 90%;
+  --primary: 207 90% 54%;
+  --primary-foreground: 211 100% 99%;
+  --secondary: 60 4.8% 95.9%;
+  --secondary-foreground: 24 9.8% 10%;
+  --accent: 60 4.8% 95.9%;
+  --accent-foreground: 24 9.8% 10%;
+  --destructive: 0 84.2% 60.2%;
+  --destructive-foreground: 60 9.1% 97.8%;
+  --ring: 20 14.3% 4.1%;
+  --radius: 0.5rem;
+  
+  /* Brasilit specific colors */
+  --brasilit-blue: 207 90% 54%; /* #1565C0 */
+  --brasilit-dark: 215 98% 35%; /* #0D47A1 */
+  --surface: 0 0% 98%; /* #FAFAFA */
+}
+
+.dark {
+  --background: 240 10% 3.9%;
+  --foreground: 0 0% 98%;
+  --muted: 240 3.7% 15.9%;
+  --muted-foreground: 240 5% 64.9%;
+  --popover: 240 10% 3.9%;
+  --popover-foreground: 0 0% 98%;
+  --card: 240 10% 3.9%;
+  --card-foreground: 0 0% 98%;
+  --border: 240 3.7% 15.9%;
+  --input: 240 3.7% 15.9%;
+  --primary: 207 90% 54%;
+  --primary-foreground: 211 100% 99%;
+  --secondary: 240 3.7% 15.9%;
+  --secondary-foreground: 0 0% 98%;
+  --accent: 240 3.7% 15.9%;
+  --accent-foreground: 0 0% 98%;
+  --destructive: 0 62.8% 30.6%;
+  --destructive-foreground: 0 0% 98%;
+  --ring: 240 4.9% 83.9%;
+  --radius: 0.5rem;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply font-sans antialiased bg-surface text-foreground;
+    font-family: 'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  }
+  
+  /* Touch-friendly sizing */
+  button {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  
+  input, textarea, select {
+    min-height: 44px;
+    font-size: 16px; /* Prevents zoom on iOS */
+  }
+}
+
+@layer components {
+  .app-container {
+    @apply max-w-md mx-auto bg-white min-h-screen shadow-lg relative;
+  }
+  
+  .brasilit-gradient {
+    background: linear-gradient(135deg, hsl(var(--brasilit-blue)), hsl(var(--brasilit-dark)));
+  }
+  
+  .touch-button {
+    @apply min-h-[60px] min-w-[60px] flex items-center justify-center font-semibold text-lg transition-all duration-150 active:scale-95;
+  }
+  
+  .form-input {
+    @apply w-full px-4 py-4 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base;
+  }
+  
+  .progress-step {
+    @apply w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium;
+  }
+  
+  .progress-step.active {
+    @apply bg-blue-600 text-white;
+  }
+  
+  .progress-step.completed {
+    @apply bg-green-500 text-white;
+  }
+  
+  .progress-step.inactive {
+    @apply bg-gray-300 text-gray-600;
+  }
+  
+  .connection-indicator {
+    @apply fixed top-4 right-4 z-50 flex items-center space-x-2 bg-white rounded-full px-3 py-1 shadow-md border;
+  }
+  
+  .photo-thumbnail {
+    @apply w-20 h-20 bg-gray-100 rounded-lg overflow-hidden relative;
+  }
+  
+  .tile-card {
+    @apply bg-white border border-gray-200 rounded-lg p-4 mb-4;
+  }
+  
+  .non-conformity-card {
+    @apply bg-white border-2 rounded-lg p-4;
+  }
+  
+  .non-conformity-card.selected {
+    @apply border-red-200;
+  }
+  
+  .non-conformity-card.unselected {
+    @apply border-gray-200;
+  }
+}
+
+/* PWA specific styles */
+@media (display-mode: standalone) {
+  body {
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
+
+/* High contrast mode for outdoor visibility */
+@media (prefers-contrast: high) {
+  :root {
+    --foreground: 0 0% 0%;
+    --background: 0 0% 100%;
+    --border: 0 0% 20%;
+  }
+  
+  .dark {
+    --foreground: 0 0% 100%;
+    --background: 0 0% 0%;
+    --border: 0 0% 80%;
+  }
+}
+
+/* Reduced motion for accessibility */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
