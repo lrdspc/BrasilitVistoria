@@ -97,7 +97,6 @@ export default function Dashboard() {
   const pendingInspections = inspections.filter(i => i.status === "pending").length;
 
   if (!user) {
-    setLocation("/login");
     return null;
   }
 
