@@ -1,0 +1,1203 @@
+
+Especificação Técnica Ultradetalhada do PWA VIGITEL Brasilit 2025
+1. Visão Geral do Projeto
+O VIGITEL é uma Progressive Web App (PWA) projetada para revolucionar o processo de vistorias técnicas de telhados da Brasilit, substituindo fluxos manuais por uma solução digital mobile-first, acessível, offline-first e padronizada. A funcionalidade central é um formulário de vistoria que coleta dados em campo e gera relatórios profissionais em formato DOCX, seguindo o template oficial da Brasilit e normas da ABNT. O aplicativo é otimizado para condições adversas (luz solar intensa, poeira, conectividade intermitente) e suporta entrada por voz, alto contraste e navegação por teclado para conformidade com WCAG 2.1 AA.
+1.1 Objetivos
+
+Automatização: Gerar relatórios DOCX com substituição dinâmica de variáveis, reduzindo o tempo de elaboração de horas para minutos.
+Offline-First: Funcionar completamente offline por até 72 horas, com sincronização automática ao reconectar.
+Responsividade: Interface otimizada para smartphones (mínimo 320px), tablets e desktops, com legibilidade em luz solar direta.
+Acessibilidade: Suporte a leitores de tela, entrada por voz, navegação por teclado e temas de alto contraste.
+Padronização: Relatórios consistentes com formatação precisa, eliminando erros manuais.
+Rastreabilidade: Banco de dados para auditorias e análises estatísticas.
+Usabilidade: Interface intuitiva com validação em tempo real, feedback visual e interações otimizadas para toques.
+
+1.2 Público-Alvo
+
+Técnicos de Campo: Usuários principais, operando em obras com smartphones Android/iOS em condições adversas.
+Coordenadores e Gerentes: Revisam relatórios e acompanham vistorias via desktop ou tablet.
+Administrativos: Gerenciam dados de clientes e protocolos.
+Clientes Finais: Recebem relatórios profissionais em DOCX, reforçando a credibilidade da Brasilit.
+
+1.3 Contexto de Uso
+
+Ambiente: Obras, galpões, residências com conectividade intermitente.
+Dispositivos: Smartphones (mínimo 320px), tablets (768px+), desktops (1024px+).
+Condições: Luz solar direta, poeira, mãos ocupadas, prazos apertados.
+
+
+2. Pilha Tecnológica
+2.1 Frontend
+
+React 18: Concurrent Features e Suspense para renderização otimizada.
+TypeScript 5.0+: Tipagem estática para confiabilidade e escalabilidade.
+Vite: Build rápido para desenvolvimento e produção.
+TanStack Query: Gerenciamento de estado do servidor e chamadas assíncronas.
+Zustand: Estado local leve com persistência para offline.
+Tailwind CSS 4.0: Estilização utilitária com design system modular.
+Headless UI: Componentes acessíveis e reutilizáveis.
+Framer Motion: Animações fluidas e performáticas.
+React Hook Form com Zod: Validação e gerenciamento de formulários.
+Chart.js: Gráficos interativos no dashboard.
+docx.js: Geração de relatórios DOCX.
+file-saver: Download de arquivos.
+jwt-decode: Decodificação de tokens JWT.
+
+2.2 Tecnologias PWA
+
+Workbox 7.0: Service Workers para cache e sincronização offline.
+Web App Manifest v3: Suporte a instalação e experiência nativa.
+IndexedDB (Dexie.js): Armazenamento local (até 100 vistorias offline).
+Web Speech API: Entrada por voz para notas.
+Web Streams API: Processamento de grandes volumes de dados.
+
+2.3 Backend
+
+Supabase:
+Autenticação: Email/senha, Google, MFA.
+Banco de Dados: PostgreSQL com Row Level Security (RLS).
+Armazenamento: Bucket para fotos (máximo 2MB).
+Functions: Envio de emails com relatórios.
+
+
+
+2.4 Hospedagem e CI/CD
+
+Vercel: Hospedagem do frontend com deploy automático.
+GitHub: Controle de versão com GitHub Actions para CI/CD.
+
+
+3. Sistema de Design
+3.1 Tokens de Design
+Definidos em src/utils/design-tokens.ts para consistência visual e escalabilidade:
+export const tokens = {
+  colors: {
+    brand: {
+      primary: '#1E40AF', // Azul Brasilit (botões primários, links)
+      primaryHover: '#1E3A8A', // Hover do primário
+      secondary: '#F59E0B', // Amarelo atenção (badges, alertas)
+      secondaryHover: '#D97706', // Hover do secundário
+      success: '#10B981', // Confirmações
+      danger: '#EF4444', // Erros
+      warning: '#F59E0B', // Avisos
+      info: '#3B82F6' // Informações
+    },
+    semantic: {
+      background: {
+        primary: '#FFFFFF', // Fundo padrão
+        secondary: '#F8FAFC', // Fundo alternativo
+        offline: '#FEE2E2', // Fundo em modo offline
+        highContrast: '#000000' // Tema alto contraste
+      },
+      text: {
+        primary: '#0F172A', // Texto principal
+        secondary: '#475569', // Texto secundário
+        disabled: '#CBD5E1', // Texto desativado
+        highContrast: '#FFFFFF' // Texto em alto contraste
+      },
+      border: {
+        primary: '#E2E8F0', // Bordas padrão
+        focus: '#3B82F6', // Bordas em foco
+        error: '#EF4444' // Bordas de erro
+      }
+    }
+  },
+  spacing: {
+    '2xs': '0.125rem', // 2px
+    xs: '0.25rem', // 4px
+    sm: '0.5rem', // 8px
+    md: '1rem', // 16px
+    lg: '1.5rem', // 24px
+    xl: '2rem', // 32px
+    '2xl': '3rem', // 48px
+    '3xl': '4rem' // 64px
+  },
+  typography: {
+    fontFamily: {
+      sans: ['Inter', 'system-ui', 'sans-serif'],
+      mono: ['Menlo', 'monospace']
+    },
+    fontSize: {
+      xs: ['0.75rem', { lineHeight: '1rem' }], // 12px
+      sm: ['0.875rem', { lineHeight: '1.25rem' }], // 14px
+      base: ['1rem', { lineHeight: '1.5rem' }], // 16px
+      lg: ['1.125rem', { lineHeight: '1.75rem' }], // 18px
+      xl: ['1.25rem', { lineHeight: '1.75rem' }], // 20px
+      '2xl': ['1.5rem', { lineHeight: '2rem' }], // 24px
+      '3xl': ['1.875rem', { lineHeight: '2.25rem' }], // 30px
+      '4xl': ['2.25rem', { lineHeight: '2.5rem' }], // 36px
+    },
+    fontWeight: {
+      normal: 400,
+      medium: 500,
+      semibold: 600,
+      bold: 700
+    }
+  },
+  borderRadius: {
+    none: '0',
+    sm: '0.125rem', // 2px
+    md: '0.375rem', // 6px
+    lg: '0.5rem', // 8px
+    full: '9999px'
+  },
+  shadows: {
+    sm: '0 1px 2px 0 rgb(0 0 0 / 0.05)',
+    md: '0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -1px rgb(0 0 0 / 0.06)',
+    lg: '0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -2px rgb(0 0 0 / 0.05)',
+    inner: 'inset 0 2px 4px 0 rgb(0 0 0 / 0.06)'
+  },
+  zIndex: {
+    base: 0,
+    dropdown: 1000,
+    sticky: 1100,
+    modal: 1200,
+    toast: 1300
+  },
+  breakpoints: {
+    sm: '640px',
+    md: '768px',
+    lg: '1024px',
+    xl: '1280px',
+    '2xl': '1536px'
+  }
+};
+
+3.2 Estilização
+
+Tailwind CSS: Classes utilitárias com extensões personalizadas em tailwind.config.js:module.exports = {
+  theme: {
+    extend: {
+      colors: tokens.colors,
+      spacing: tokens.spacing,
+      fontSize: tokens.typography.fontSize,
+      fontFamily: tokens.typography.fontFamily,
+      borderRadius: tokens.borderRadius,
+      boxShadow: tokens.shadows,
+      zIndex: tokens.zIndex
+    }
+  },
+  plugins: [require('@headlessui/tailwindcss')]
+};
+
+
+Utilitário cn:import { clsx } from 'clsx';
+import { twMerge } from 'tailwind-merge';
+
+export function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs));
+}
+
+
+Componentes Reutilizáveis: Usar Headless UI para acessibilidade (ex.: Dialog, Listbox, Combobox).
+
+3.3 Acessibilidade
+
+WCAG 2.1 AA:
+Contraste mínimo: 4.5:1 (texto normal), 3:1 (texto grande).
+ARIA attributes: aria-label, aria-live, role.
+Labels explícitas ou sr-only para leitores de tela.
+Foco visível: focus:ring-2 focus:ring-blue-500 focus:ring-offset-2.
+
+
+Navegação por Teclado: Suporte a Tab, Enter, setas, Esc.
+Temas:
+Claro (padrão).
+Escuro (bg-gray-900 text-white).
+Alto Contraste (bg-black text-white).
+
+
+Entrada por Voz: Web Speech API para notas.
+Testes: Ferramentas como axe DevTools e Lighthouse Accessibility.
+
+3.4 Animações
+
+Framer Motion para transições suaves:
+Entradas: opacity: 0 -> 1, y: 10 -> 0 (200ms, ease-out).
+Saídas: opacity: 1 -> 0, y: 0 -> 10 (200ms, ease-in).
+Toasts: Slide-in da direita (300ms).
+Botões: Escala de 1 -> 0.95 no hover (100ms).
+
+import { motion } from 'framer-motion';
+
+export function AnimatedCard({ children }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: 10 }}
+      transition={{ duration: 0.2, ease: 'easeOut' }}
+      className="bg-white shadow-md rounded-lg p-4"
+    >
+      {children}
+    </motion.div>
+  );
+}
+
+
+
+
+4. Estrutura do Projeto
+src/
+├── app/                    # Rotas do aplicativo
+│   ├── (auth)/            # Autenticação
+│   │   ├── login.tsx
+│   │   ├── register.tsx
+│   │   └── reset-password.tsx
+│   ├── dashboard/         # Dashboard
+│   │   └── page.tsx
+│   ├── vistorias/         # Vistorias
+│   │   ├── nova/          # Novo formulário
+│   │   │   └── page.tsx
+│   │   └── [id]/          # Visualização/edição
+│   │       └── page.tsx
+│   ├── configuracoes/     # Configurações
+│   │   └── page.tsx
+│   └── layout.tsx         # Layout global
+├── components/            # Componentes reutilizáveis
+│   ├── ui/                # Sistema de design
+│   │   ├── Button.tsx
+│   │   ├── Input.tsx
+│   │   ├── Card.tsx
+│   │   ├── Toast.tsx
+│   │   ├── Badge.tsx
+│   │   ├── Dropdown.tsx
+│   │   ├── Modal.tsx
+│   │   └── ProgressBar.tsx
+│   ├── forms/             # Formulários
+│   │   ├── ClienteSelector.tsx
+│   │   ├── TelhaSelector.tsx
+│   │   ├── NaoConformidadesChecklist.tsx
+│   │   ├── PhotoUploader.tsx
+│   │   └── VoiceInput.tsx
+│   ├── charts/            # Gráficos
+│   │   └── VistoriaStats.tsx
+│   └── layouts/           # Layouts
+│       ├── Sidebar.tsx
+│       ├── BottomNav.tsx
+│       └── Header.tsx
+├── hooks/                 # Hooks personalizados
+│   ├── useVistorias.ts
+│   ├── useReportGenerator.ts
+│   ├── useOfflineSync.ts
+│   └── useTheme.ts
+├── stores/                # Zustand
+│   ├── authStore.ts
+│   └── vistoriaStore.ts
+├── services/              # APIs
+│   ├── supabaseClient.ts
+│   ├── authService.ts
+│   ├── vistoriaService.ts
+│   ├── storageService.ts
+│   └── viaCepService.ts
+├── utils/                 # Utilitários
+│   ├── cn.ts
+│   ├── imageCompressor.ts
+│   ├── formatters.ts
+│   └── performance.ts
+├── types/                 # Tipos TypeScript
+│   ├── vistoria.ts
+│   ├── cliente.ts
+│   └── user.ts
+├── workers/               # Workers
+│   ├── reportGenerator.worker.ts
+│   └── service-worker.ts
+├── public/                # Estáticos
+│   ├── manifest.json
+│   ├── logo-brasilit.png
+│   ├── icon-192x192.png
+│   └── icon-512x512.png
+├── tailwind.config.js
+├── vercel.json
+└── .github/workflows/
+    ├── deploy.yml
+    └── test.yml
+
+
+5. Layouts e Páginas
+5.1 Layout Global
+Desktop
+
+Estrutura:
+Barra Lateral: Fixa, 200px de largura, fundo #F8FAFC, borda direita #E2E8F0.
+Cabeçalho: Fixo, 64px de altura, fundo branco, sombra sm, padding 16px.
+Conteúdo: Margem esquerda 200px, padding 24px, fundo #FFFFFF.
+Rodapé: Opcional, 48px, fundo #F8FAFC, com links de suporte.
+
+
+Navegação:
+Barra lateral com:
+Logo Brasilit (150px largura, topo).
+Itens: Home, Vistorias (submenu: Pendentes, Concluídas), Configurações, Sair.
+Estilo: flex flex-col gap-2, itens com p-3 rounded-md hover:bg-blue-100.
+
+
+Cabeçalho com:
+Título (24px, semibold).
+Ícone de conexão (verde #10B981, vermelho #EF4444).
+Perfil (avatar circular 40px, dropdown com Editar Perfil, Sair).
+
+
+
+
+Breakpoints:
+lg (1024px+): Barra lateral visível.
+xl (1280px+): Conteúdo com largura máxima 1200px, centralizado.
+
+
+
+Mobile
+
+Estrutura:
+Cabeçalho: Fixo, 56px, fundo branco, sombra sm, padding 16px.
+Conteúdo: Padding 16px, fundo #FFFFFF.
+Navegação Inferior: Fixa, 60px, fundo branco, sombra sm, 5 ícones.
+
+
+Navegação:
+Cabeçalho com:
+Menu hambúrguer (ícone 24px, abre off-canvas).
+Título (20px, semibold).
+Ícone de conexão.
+
+
+Bottom nav com:
+Ícones: Home, Vistorias, Nova Vistoria, Configurações, Perfil.
+Estilo: flex justify-around, ícones 24px, badges circulares.
+
+
+Off-canvas (200px largura, desliza da esquerda, fundo #F8FAFC).
+
+
+Breakpoints:
+sm (640px-): Layout de pilha única.
+md (768px-): Ajustes de padding (24px).
+
+
+
+5.2 Página de Login (/login)
+Layout
+
+Desktop:
+Fundo: Gradiente #F8FAFC -> #E5E7EB, min-h-screen.
+Card: Centralizado, 400px largura, 500px altura, fundo branco, sombra md, borda #E2E8F0, arredondamento lg.
+Estrutura Interna:
+Logo Brasilit (150px largura, margem superior 24px, centralizado).
+Formulário (flex flex-col gap-6, padding 32px).
+Campos (w-full, altura 48px, borda #E2E8F0, arredondamento md).
+Botões (w-full, altura 60px, arredondamento md).
+Links (text-blue-600 hover:underline, centralizados).
+
+
+Ícone de Conexão: Canto superior direito, 24px, absolute top-4 right-4.
+Animações:
+Card: opacity: 0 -> 1, y: 20 -> 0 (300ms, ease-out).
+Erros: Slide-in de cima (200ms).
+
+
+
+
+Mobile:
+Fundo: #F8FAFC, min-h-screen.
+Formulário: Tela cheia, padding 16px, sem card (borda removida).
+Estrutura Interna:
+Logo (120px largura, margem superior 16px).
+Campos (w-full, altura 44px).
+Botões (w-full, altura 56px).
+
+
+Ícone de Conexão: No cabeçalho, ao lado do título.
+Animações: Mesmas do desktop, mas com y: 10 -> 0.
+
+
+
+Componentes
+
+Logo:
+<img src="/logo-brasilit.png" alt="Brasilit" className="mx-auto w-36" />.
+
+
+Input:import { cn } from '../utils/cn';
+
+export function Input({ id, label, icon, error, ...props }) {
+  return (
+    <div className="space-y-1">
+      <label htmlFor={id} className="sr-only">{label}</label>
+      <div className="relative">
+        {icon && <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">{icon}</span>}
+        <input
+          id={id}
+          {...props}
+          className={cn(
+            'w-full rounded-md border p-3 text-base focus:ring-2 focus:ring-blue-500',
+            icon && 'pl-10',
+            error && 'border-red-500 focus:ring-red-500'
+          )}
+        />
+      </div>
+      {error && <p className="text-sm text-red-500">{error}</p>}
+    </div>
+  );
+}
+
+
+Button:import { cn } from '../utils/cn';
+import { motion } from 'framer-motion';
+
+export function Button({ variant = 'primary', size = 'lg', children, ...props }) {
+  return (
+    <motion.button
+      whileHover={{ scale: 0.98 }}
+      whileTap={{ scale: 0.95 }}
+      className={cn(
+        'rounded-md font-medium transition-colors',
+        variant === 'primary' && 'bg-blue-700 text-white hover:bg-blue-800',
+        variant === 'secondary' && 'border border-gray-300 text-gray-700 hover:bg-gray-50',
+        variant === 'link' && 'text-blue-600 hover:underline',
+        size === 'lg' && 'px-6 py-4 text-base',
+        size === 'md' && 'px-4 py-3 text-sm'
+      )}
+      {...props}
+    >
+      {children}
+    </motion.button>
+  );
+}
+
+
+Toast:import { motion } from 'framer-motion';
+
+export function Toast({ message, variant = 'error' }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, x: 100 }}
+      animate={{ opacity: 1, x: 0 }}
+      exit={{ opacity: 0, x: 100 }}
+      className={cn(
+        'fixed top-4 right-4 rounded-md p-4 shadow-lg',
+        variant === 'error' && 'bg-red-100 text-red-800',
+        variant === 'success' && 'bg-green-100 text-green-800'
+      )}
+    >
+      {message}
+    </motion.div>
+  );
+}
+
+
+
+Estilização
+
+Campos:
+Borda: 1px solid #E2E8F0, arredondamento 6px.
+Foco: ring-2 ring-blue-500 ring-offset-2.
+Placeholder: text-gray-400.
+
+
+Botões:
+Primário: bg-blue-700 text-white, hover bg-blue-800.
+Secundário: border-gray-300 text-gray-700, hover bg-gray-50.
+
+
+Ícone de Conexão:
+Verde: #10B981 (online).
+Vermelho: #EF4444 (offline).
+Animação: Pulso suave (scale 1 -> 1.1, 1s) quando offline.
+
+
+
+Acessibilidade
+
+Labels: sr-only com texto descritivo.
+ARIA: aria-describedby para erros.
+Foco: Visível em todos os elementos interativos.
+Teclado: Tab para navegar, Enter para submeter.
+
+Código
+import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { supabase } from '../services/supabaseClient';
+import { Input, Button, Toast } from '../components/ui';
+import { EnvelopeIcon, LockClosedIcon } from '@heroicons/react/24/outline';
+
+export function Login() {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const navigate = useNavigate();
+
+  const handleLogin = async () => {
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) throw error;
+      navigate('/dashboard');
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-gradient-to-b from-gray-50 to-gray-100">
+      <div className="w-full max-w-md rounded-lg bg-white p-8 shadow-md">
+        <img src="/logo-brasilit.png" alt="Brasilit" className="mx-auto mb-6 w-36" />
+        {error && <Toast message={error} />}
+        <div className="space-y-6">
+          <Input
+            id="email"
+            label="Email"
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="Email corporativo"
+            icon={<EnvelopeIcon className="h-5 w-5" />}
+            error={error.includes('Email') && 'Email inválido'}
+          />
+          <Input
+            id="password"
+            label="Senha"
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="Senha"
+            icon={<LockClosedIcon className="h-5 w-5" />}
+            error={error.includes('Senha') && 'Senha incorreta'}
+          />
+          <Button onClick={handleLogin}>Entrar</Button>
+          <Button variant="secondary">Entrar com Google</Button>
+          <Button variant="link" as="a" href="/reset-password">Esqueci minha senha</Button>
+        </div>
+        <div
+          className={cn(
+            'absolute top-4 right-4 h-6 w-6 rounded-full',
+            isOnline ? 'bg-green-500' : 'bg-red-500 animate-pulse'
+          )}
+          aria-label={isOnline ? 'Online' : 'Offline'}
+        />
+      </div>
+    </div>
+  );
+}
+
+
+5.3 Dashboard (/dashboard)
+Layout
+
+Desktop:
+Barra Lateral: 200px, itens com p-3 text-gray-700 hover:bg-blue-100.
+Cabeçalho: 64px, com:
+Título: "VIGITEL - Suas Vistorias" (24px, semibold).
+Ícone de conexão (24px, canto direito).
+Perfil (avatar 40px, dropdown com bg-white shadow-lg).
+
+
+Conteúdo (grid grid-cols-12 gap-6, padding 24px):
+Resumo (col-span-12): Card com "5 vistorias pendentes, 2 vencem hoje" (20px, bold).
+Busca e Filtros (col-span-12): Barra de busca (400px, pl-10), dropdowns (w-40).
+Lista de Vistorias (col-span-8): Tabela ou cartões (120px altura, gap-4).
+Gráficos (col-span-4): 2 gráficos (barras 300px altura, pizza 200px).
+
+
+Botão Flutuante: + (60x60px, azul, bottom-6 right-6, sombra lg).
+
+
+Mobile:
+Cabeçalho: 56px, menu hambúrguer, título (20px), conexão.
+Bottom Nav: 60px, 5 ícones (flex justify-around, altura 24px).
+Conteúdo (flex flex-col gap-4, padding 16px):
+Resumo (card, p-4 text-lg).
+Busca (largura total, pl-8).
+Filtros (dropdowns colapsáveis, w-full).
+Lista (cartões empilhados, rolagem infinita).
+Gráficos (largura total, 250px altura).
+
+
+Botão Flutuante: Mesmo estilo, bottom-20 right-4.
+
+
+
+Componentes
+
+Card:export function Card({ cliente, protocolo, data, status, prazo }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      className="bg-white shadow-md rounded-lg p-4 flex justify-between items-center"
+    >
+      <div>
+        <h3 className="text-lg font-semibold">{cliente}</h3>
+        <p className="text-sm text-gray-600">Protocolo: {protocolo}</p>
+        <p className="text-sm text-gray-600">Data: {data}</p>
+      </div>
+      <div className="text-right">
+        <Badge variant={status === 'Pendente' ? 'danger' : 'success'}>{status}</Badge>
+        <p className="text-sm text-red-600">{prazo}</p>
+      </div>
+    </motion.div>
+  );
+}
+
+
+SearchInput:
+Barra com autocompletar (z-10, dropdown bg-white shadow-lg).
+
+
+Badge:export function Badge({ children, variant }) {
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium',
+        variant === 'success' && 'bg-green-100 text-green-800',
+        variant === 'danger' && 'bg-red-100 text-red-800',
+        variant === 'warning' && 'bg-yellow-100 text-yellow-800'
+      )}
+    >
+      {children}
+    </span>
+  );
+}
+
+
+Chart:
+Chart.js com barras (não conformidades) e pizza (status).
+
+
+
+Estilização
+
+Resumo: bg-blue-50 text-blue-800 p-4 rounded-lg.
+Busca: border-gray-300 focus:ring-blue-500 pl-10.
+Filtros: Dropdowns com bg-white border-gray-300 rounded-md.
+Cartões: bg-white shadow-md rounded-lg p-4 hover:shadow-lg.
+Gráficos: bg-white p-4 rounded-lg shadow-sm.
+
+Acessibilidade
+
+ARIA: aria-live="polite" para atualizações de busca.
+Teclado: Tab para navegar filtros, Enter para aplicar.
+Leitores de Tela: Descrições para gráficos (aria-label).
+
+Código
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '../services/supabaseClient';
+import { Card, SearchInput, Badge } from '../components/ui';
+import { Chart } from '../components/charts/VistoriaStats';
+
+export function Dashboard() {
+  const { data: vistorias } = useQuery({
+    queryKey: ['vistorias'],
+    queryFn: async () => {
+      const { data } = await supabase.from('vistorias').select('*').limit(10);
+      return data;
+    }
+  });
+
+  return (
+    <div className="flex min-h-screen">
+      <Sidebar />
+      <div className="flex-1">
+        <Header title="VIGITEL - Suas Vistorias" />
+        <main className="p-6 grid grid-cols-12 gap-6">
+          <div className="col-span-12 bg-blue-50 p-4 rounded-lg">
+            <p className="text-lg font-semibold">5 vistorias pendentes, 2 vencem hoje</p>
+          </div>
+          <div className="col-span-12 flex gap-4">
+            <SearchInput />
+            <select className="w-40 rounded-md border p-2">
+              <option>Todos</option>
+              <option>Pendente</option>
+              <option>Concluído</option>
+            </select>
+          </div>
+          <div className="col-span-8 space-y-4">
+            {vistorias?.map((v) => (
+              <Card
+                key={v.id}
+                cliente={v.cliente.nome}
+                protocolo={v.protocolo}
+                data={v.data}
+                status={v.status}
+                prazo="Vence em 2 dias"
+              />
+            ))}
+          </div>
+          <div className="col-span-4 space-y-4">
+            <Chart type="bar" title="Não Conformidades" />
+            <Chart type="pie" title="Status das Vistorias" />
+          </div>
+          <Button
+            className="fixed bottom-6 right-6 h-16 w-16 rounded-full bg-blue-700 text-white text-2xl shadow-lg"
+            as="a"
+            href="/vistorias/nova"
+          >
+            +
+          </Button>
+        </main>
+      </div>
+    </div>
+  );
+}
+
+
+5.4 Formulário de Vistoria (/vistorias/nova)
+Layout
+
+Desktop:
+Cabeçalho: 64px, título "Nova Vistoria" (24px), ícone de conexão.
+Barra de Progresso: Fixa abaixo do cabeçalho, 48px, flex gap-2.
+Bolinhas (12px, bg-blue-700 quando ativa, bg-gray-300 inativa).
+Rótulos (14px, text-gray-600, text-blue-700 quando ativa).
+
+
+Conteúdo: Abas horizontais (flex gap-4, border-b), cada aba com:
+Título (16px, semibold).
+Indicador ativo (border-b-2 border-blue-700).
+
+
+Formulário: grid grid-cols-12 gap-6, padding 24px.
+Campos curtos: col-span-6.
+Campos longos: col-span-12.
+
+
+Rodapé: Fixo, 64px, fundo branco, sombra sm, flex justify-between p-4.
+Botões: "Voltar" (secundário), "Próximo" (primário), "Salvar Rascunho" (link).
+
+
+
+
+Mobile:
+Cabeçalho: 56px, título (20px), conexão, botão "Salvar Rascunho".
+Barra de Progresso: 40px, bolinhas 10px, rótulos 12px.
+Conteúdo: Seções sequenciais (flex flex-col gap-4), padding 16px.
+Campos: Largura total, altura 44px.
+
+
+Rodapé: Fixo, 56px, botões "Voltar"/"Próximo" (w-1/2).
+
+
+
+Estrutura do Formulário
+6 Etapas com validação em tempo real e suporte offline.
+Etapa 1: Seleção de Cliente
+
+Campos:
+Cliente: Combobox com autocompletar (w-full, altura 48px).
+Novo Cliente (modal ou seção expansível):
+Nome (w-full, obrigatório).
+CNPJ/CPF (w-full, máscara 99.999.999/9999-99 ou 999.999.999-99).
+Contato (w-full, máscara (99) 99999-9999).
+Email (w-full, formato validado).
+
+
+
+
+Estilização:
+Combobox: border-gray-300 rounded-md p-3, dropdown bg-white shadow-lg max-h-60.
+Modal: bg-white rounded-lg p-6 max-w-md mx-auto.
+
+
+Validação:
+Nome e CNPJ/CPF obrigatórios.
+CNPJ/CPF único (verificado via Supabase/IndexedDB).
+
+
+Feedback:
+Sugestões (máximo 5, p-2 hover:bg-gray-100).
+Erro: text-red-500 text-sm mt-1.
+
+
+
+Etapa 2: Informações Básicas
+
+Campos:
+Data de Vistoria (calendário popup, w-full).
+Empreendimento (dropdown, opções: Residencial, Comercial, Industrial).
+Cidade (w-full, máximo 50 caracteres).
+Estado (dropdown, padrão PR).
+Endereço (w-full, máximo 200 caracteres).
+CEP (w-full, máscara 99999-999, busca via ViaCEP).
+Protocolo FAR (w-full, gerado como FAR${Date.now()}).
+Assunto (w-full, máximo 100 caracteres).
+
+
+Estilização:
+Calendário: bg-white shadow-lg rounded-md p-4.
+Dropdown: border-gray-300 rounded-md p-3.
+
+
+Validação:
+Data não futura.
+CEP válido (API).
+Protocolo único.
+
+
+Feedback:
+Endereço preenchido após CEP.
+Toast: "Protocolo já existe".
+
+
+
+Etapa 3: Informações da Equipa
+
+Campos:
+Técnico (w-full, sugestão do usuário logado).
+Departamento (fixo: Assistência Técnica).
+Unidade (dropdown: PR).
+Coordenador (fixo: Marlon Weingartner).
+Gerente (fixo: Elisabete Kudo).
+Regional (dropdown: Sul).
+
+
+Estilização: Campos fixos com bg-gray-50 text-gray-500.
+Validação: Técnico obrigatório.
+Feedback: Autosugestão visível.
+
+Etapa 4: Seleção de Telhas
+
+Campos por Telha:
+Espessura (dropdown: 5mm, 6mm, 8mm).
+Comprimento (dropdown dinâmico: 5mm → 1,22m-2,44m; 6mm/8mm → adiciona 3,05m-3,66m).
+Largura (dropdown: 0,92m, 1,1m).
+Quantidade (numérico, 1-1000).
+
+
+Estilização:
+Cartões: bg-white border rounded-md p-4 flex gap-2 flex-wrap.
+Botão "Adicionar": bg-blue-600 text-white rounded-full p-2.
+Lixeira: text-red-500 hover:text-red-600.
+Área total: text-green-600 font-semibold text-lg mt-4.
+
+
+Validação:
+Combinações válidas.
+Quantidade positiva.
+
+
+Feedback:
+Área: "120,50m²".
+Alerta: "Quantidade inválida".
+
+
+
+Etapa 5: Não Conformidades
+
+Campos:
+Checklist (14 checkboxes, flex flex-col gap-3).
+Fotos (upload, 1-3 por item, 2MB).
+Notas (textarea, máximo 500px, com voz).
+
+
+Estilização:
+Checkbox: h-5 w-5 rounded, checked bg-blue-700.
+Upload: bg-blue-100 p-3 rounded-md text-center.
+Fotos: Miniaturas 100x100px, rounded grid grid-cols-3`.
+VoiceInput: flex w-full, botão microfone h-10 w-10 bg-blue-200.
+
+
+Validação:
+1 item mínimo.
+1 foto mínima.
+
+
+Feedback:
+Contador: "3/14 selecionadas".
+Toasts para upload.
+
+
+
+Etapa 6: Revisão Final
+
+Estrutura:
+Seções expansivas (accordion, bg-white p-4 rounded-lg).
+Botões: "Salvar", "Gerar Relatório", "Enviar Email".
+
+
+Estilização:
+Accordion: border-b, ativo bg-blue-50.
+Botões: Primários (w-1/3), espaçados (gap-4).
+
+
+Feedback:
+Checks verdes ✅.
+Alerta: "Campos pendentes".
+
+
+
+Componentes
+
+ProgressBar:export function ProgressBar({ steps, activeStep }) {
+  return (
+    <div className="flex items-center gap-2 p-4 bg-white shadow-sm">
+      {steps.map((step, i) => (
+        <div key={i} className="flex-1 text-center">
+          <div
+            className={cn(
+              'mx-auto h-4 w-4 rounded-full',
+              i + 1 <= activeStep ? 'bg-blue-700' : 'bg-gray-300'
+            )}
+          />
+          <p className={cn('mt-1 text-sm', i + 1 <= activeStep ? 'text-blue-700' : 'text-gray-600')}>
+            {step}
+          </p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+
+ClienteSelector, TelhaSelector, PhotoUploader, VoiceInput.
+
+Estilização
+
+Abas (desktop): border-b-2 border-blue-600 text-blue-600.
+Campos: border-gray-300 focus:ring-blue-400.
+Botões: py-3 px-6, hover com scale-0.98.
+Progresso: Bolinhas com transition: background 0.3s.
+
+Acessibilidade
+
+ARIA: aria-current para aba ativa.
+Teclado: Navegação por Tab, setas.
+Leitores de Tela: Descrição da progressão.
+
+Código (exemplo simplificado)
+import { useState } from 'react';
+import { ProgressBar, ClienteSelector } from '../components/ui';
+import { useVistoriaStore } from '../stores/vistoriaStore';
+
+const steps = ['Cliente', 'Informações', 'Equipe', 'Telhas', 'Não Conformidades', 'Revisão'];
+
+export function VistoriaForm() {
+  const [step, setStep] = useState(1);
+  const { cliente, setCliente } = useVistoriaStore();
+
+  return (
+    <div className="min-h-screen">
+      <Header title="Nova Vistoria" />
+      <ProgressBar steps={steps} activeStep={step} />
+      <main className="p-4">
+        {step === 1 && <ClienteSelector value={cliente} onChange={setCliente} />}
+        {/* Outras etapas */}
+        <footer className="fixed bottom-0 left-0 right-0 bg-white p-4 shadow-lg flex gap-4">
+          <Button variant="secondary" onClick={() => setStep(step - 1)} disabled={step === 1}>
+            Voltar
+          </Button>
+          <Button onClick={() => setStep(step + 1)} disabled={step === steps.length}>
+            Próximo
+          </Button>
+        </footer>
+      </main>
+    </div>
+  );
+}
+
+
+5.5 Visualização de Vistoria (/vistorias/[id])
+Layout
+
+Desktop:
+Cabeçalho: Título "Vistoria #FAR123" (24px), conexão.
+Conteúdo: grid grid-cols-12 gap-6 p-6:
+Seções (col-span-8): Cards expansíveis (bg-white p-5 rounded-lg).
+Ações (col-span-4): Botões fixos (sticky top-4, flex flex-col gap-3).
+
+
+Fotos: Grade (grid-cols-3 gap-4, itens 200px).
+
+
+Mobile:
+Cabeçalho: Título (20px), conexão.
+Conteúdo: flex flex-col gap-4 p-4:
+Seções seções.
+Fotos em carrossel (w-full h-48).
+
+
+Ações: Botões na base (flex gap-2).
+
+
+
+Componentes
+
+Accordion:export function Accordion({ title, children }) {
+  const [isOpen, setIsOpen] = useState(false);
+  return (
+    <div className="bg-white rounded-lg border">
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full p-4 text-left flex justify-between items-center"
+        aria-expanded={isOpen}
+      >
+        <span className="text-lg font-semibold">{title}</span>
+        <ChevronDownIcon className={cn('h-5 w-5', isOpen ? 'rotate-180' : '')} />
+      </button>
+      {isOpen && <div className="p-4 border-t">{children}</div>}
+    </div>
+  );
+}
+
+
+PhotoCarousel:
+Carrossel com navegação (flex overflow-x-auto snap-x snap-mandatory).
+
+
+
+Estilização
+
+Cards: shadow-md hover:shadow-lg.
+Fotos: object-cover rounded-md.
+Botões: py-3 px-6, hover bg-blue-600.
+
+Acessibilidade
+
+ARIA: aria-expanded para accordions.
+Teclado: Navegação por fotos com setas.
+
+
+5.6 Configurações (/configurações)
+Layout
+
+Desktop:
+Conteúdo: grid grid-cols-12 gap-6 p-6:
+Configurações (col-span-8): Lista (flex flex-col gap-4).
+Ajuda (col-span-4): Links e tutoriais (sticky top-4).
+
+
+
+
+Mobile:
+Conteúdo: flex flex-col gap-4 p-4.
+Configurações em lista.
+Ajuda em seção expansível.
+
+
+
+
+
+Componentes
+
+Toggle:export function Toggle({ checked, onChange, label }) {
+  return (
+    <label className="flex items-center gap-2 cursor-pointer">
+      <input type="checkbox" checked={checked} onChange={onChange} className="sr-only" />
+      <div
+        className={cn(
+          'h-6 w-11 rounded-full bg-gray-300',
+          checked && 'bg-blue-700'
+        )}
+      >
+        <div
+          className={cn(
+            'h-4 w-4 rounded-full bg-white shadow-sm transform transition-transform',
+            checked && 'translate-x-5'
+          )}
+        />
+      </label>
+      <span>{label}</span>
+    </div>
+  );
+}
+
+
+
+Estilização
+
+Lista: bg-white p-4 rounded-lg.
+Togglês: h-6 w-11 rounded-full.
+
+Acessibilidade
+
+ARIA: aria-checked para toggles.
+Teclado: Espaço para ativar/des.
+
+
+6. Geração de Relatórios DOCX
+6.1 Estrutura
+
+Formatação:
+Papel A4, margens: 2,5cm (topo/base), 3cm (esquerda), 2,5cm (direita).
+Fonte: Times New Roman, 12pt, espaçamento 1,5, justificado.
+Nome: Relatório de Vistoria-${cliente.nome}.docx.
+
+
+Seções:
+Cabeçalho: "RELATÓRIO TÉCNICO" (bold, center).
+Informações: Pares (ex.: Data: 12/06/2025).
+Introdução: Texto fixo com {protocolo}.
+Quantidade e Modelo: Lista com •.
+Análise Técnica: Não conformidades em negrito.
+Conclusão: Lista numerada, texto "IMPROCEDENTE".
+Assinatura: Texto fixo.
+
+
+
+6.2 Implementação
+import { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType } from 'docx';
+import { saveAs } from 'file-saver';
+
+self.onmessage = async ({ data: { vistoria } }) => {
+  const doc = new Document({
+    sections: [{
+      properties: { page: { margin: { top: 7200, bottom: 7200, left: 10800, right: 7200 } } },
+      children: [
+        new Paragraph({
+          text: 'RELATÓRIO TÉCNICO',
+          heading: HeadingLevel.HEADING_1,
+          alignment: AlignmentType.CENTER,
+          spacing: { after: 720 }
+        }),
+        // Adicionar outras seções
+      ]
+    }]
+  });
+  const blob = await Packer.toBlob(doc);
+  self.postMessage(blob);
+};
+
+// Thread principal
+export function generateReport(vistoria) {
+  const worker = new Worker('reportWorker.js');
+  worker.onmessage = (e) => saveAs(e.data, `Relatório-${vistoria.cliente.nome}.docx`);
+  worker.postMessage({ vistoria });
+}
+
+
+7. Integração com Supabase
+
+Autenticação:
+Email/senha, Google, MFA.
+
+
+Banco de Dados:
+Tabela vistorias com RLS.
+Tabela clientes.
+
+
+Armazenamento:
+Bucket fotos com upload de imagens comprimidas.
+
+
+
+
+8. Hospedagem e CI/CD
+
+Vercel:{
+  "version": 2,
+  "builds": [
+    { "src": "index.html", "use": "@vercel/build", "config": { "distDir": "dist" } }
+  ],
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
+}
+
+
+GitHub:
+Workflow para deploy e testes.
+
+
+
+
+9. Conclusão
+O VIGITEL é uma solução frontend-first que redefine as vistorias técnicas da Brasilit. Com um design detalhado, responsividade impecável, acessibilidade e funcionalidades offline, ele atende às demandas de técnicos em campo e reforça a imagem de inovação da empresa.

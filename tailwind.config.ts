@@ -1,16 +1,25 @@
 import type { Config } from "tailwindcss";
+import { tokens } from "./client/src/utils/design-tokens";
 
 export default {
   darkMode: ["class"],
   content: ["./client/index.html", "./client/src/**/*.{js,jsx,ts,tsx}"],
   theme: {
     extend: {
+      spacing: tokens.spacing,
+      fontSize: tokens.typography.fontSize,
+      fontFamily: tokens.typography.fontFamily,
       borderRadius: {
         lg: "var(--radius)",
         md: "calc(var(--radius) - 2px)",
         sm: "calc(var(--radius) - 4px)",
+        ...tokens.borderRadius,
       },
+      boxShadow: tokens.shadows,
+      zIndex: tokens.zIndex,
       colors: {
+        ...tokens.colors.brand,
+        ...tokens.colors.semantic,
         background: "hsl(var(--background))",
         foreground: "hsl(var(--foreground))",
         card: {

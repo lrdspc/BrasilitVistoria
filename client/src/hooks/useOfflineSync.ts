@@ -105,7 +105,7 @@ export function useOfflineSync() {
     }
   };
 
-  const forcSync = async () => {
+  const forceSync = async () => {
     if (connectionManager.isOnline) {
       await syncPendingData();
     } else {
@@ -117,10 +117,31 @@ export function useOfflineSync() {
     }
   };
 
+  const clearOfflineData = async () => {
+    try {
+      await offlineStorage.clearAll();
+      setPendingCount(0);
+      toast({
+        title: "Dados limpos",
+        description: "Todos os dados offline foram removidos",
+      });
+    } catch (error) {
+      console.error("Error clearing offline data:", error);
+      toast({
+        title: "Erro",
+        description: "Erro ao limpar dados offline",
+        variant: "destructive",
+      });
+    }
+  };
+
   return {
+    isOnline: connectionManager.isOnline,
     isSyncing,
     pendingCount,
     syncPendingData,
-    forcSync,
+    forceSync,
+    clearOfflineData,
+    getOfflineStorage: () => offlineStorage,
   };
 }

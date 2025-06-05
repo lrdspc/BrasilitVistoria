@@ -1,115 +1,27 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Plus, Search, Forward } from "lucide-react";
+import { ArrowLeft, Forward } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { AppLayout } from "@/components/layouts/AppLayout";
 import { ProgressBar } from "@/components/ProgressBar";
-import { ConnectionStatus } from "@/components/ConnectionStatus";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { useToast } from "@/hooks/use-toast";
-import { apiRequest } from "@/lib/queryClient";
-import { connectionManager, offlineStorage } from "@/lib/offline";
-import { insertClientSchema, type Client } from "@shared/schema";
-import { z } from "zod";
-
-const clientFormSchema = insertClientSchema.extend({
-  document: z.string().min(11, "Documento deve ter pelo menos 11 caracteres"),
-});
+import { ClienteSelector } from "@/components/forms/ClienteSelector";
+import { useVistoriaStore } from "@/stores/vistoriaStore";
+import type { Client } from "@shared/schema";
 
 export default function ClientSelection() {
   const [, setLocation] = useLocation();
-  const [searchQuery, setSearchQuery] = useState("");
-  const [showNewClientDialog, setShowNewClientDialog] = useState(false);
-  const [selectedClient, setSelectedClient] = useState<Client | null>(null);
-  const { toast } = useToast();
-  const queryClient = useQueryClient();
-
-  // Search clients
-  const { data: clients = [], isLoading } = useQuery<Client[]>({
-    queryKey: ["/api/clients", { search: searchQuery }],
-    enabled: searchQuery.length > 2 && connectionManager.isOnline,
-  });
-
-  // New client form
-  const form = useForm<z.infer<typeof clientFormSchema>>({
-    resolver: zodResolver(clientFormSchema),
-    defaultValues: {
-      name: "",
-      document: "",
-      contact: "",
-      email: "",
-    },
-  });
-
-  // Create client mutation
-  const createClientMutation = useMutation({
-    mutationFn: async (data: z.infer<typeof clientFormSchema>) => {
-      if (connectionManager.isOnline) {
-        const response = await apiRequest("POST", "/api/clients", data);
-        return response.json();
-      } else {
-        // Save offline
-        const id = await offlineStorage.saveClient(data);
-        await offlineStorage.addToSyncQueue("create_client", { ...data, id });
-        return { ...data, id };
-      }
-    },
-    onSuccess: (newClient) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
-      setSelectedClient(newClient);
-      setShowNewClientDialog(false);
-      form.reset();
-      toast({
-        title: "Cliente criado",
-        description: connectionManager.isOnline ? "Cliente salvo com sucesso" : "Cliente salvo offline",
-      });
-    },
-    onError: (error) => {
-      toast({
-        title: "Erro ao criar cliente",
-        description: error instanceof Error ? error.message : "Erro desconhecido",
-        variant: "destructive",
-      });
-    },
-  });
-
-  const handleClientSelect = (client: Client) => {
-    setSelectedClient(client);
-    // Store selected client in session storage for next step
-    sessionStorage.setItem("vigitel_selected_client", JSON.stringify(client));
-  };
+  const { client, setClient, setCurrentStep } = useVistoriaStore();
 
   const handleNext = () => {
-    if (selectedClient) {
-      sessionStorage.setItem("vigitel_selected_client", JSON.stringify(selectedClient));
-    }
+    setCurrentStep(2);
     setLocation("/inspection/basic-info");
   };
 
   const handleSkipClient = () => {
-    sessionStorage.removeItem("vigitel_selected_client");
+    setClient(null);
+    setCurrentStep(2);
     setLocation("/inspection/basic-info");
-  };
-
-  const onSubmit = (data: z.infer<typeof clientFormSchema>) => {
-    createClientMutation.mutate(data);
-  };
-
-  const formatDocument = (doc: string) => {
-    // Format CNPJ: XX.XXX.XXX/0001-XX or CPF: XXX.XXX.XXX-XX
-    const cleanDoc = doc.replace(/\D/g, "");
-    if (cleanDoc.length === 14) {
-      return cleanDoc.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, "$1.$2.$3/$4-$5");
-    } else if (cleanDoc.length === 11) {
-      return cleanDoc.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
-    }
-    return doc;
   };
 
   return (

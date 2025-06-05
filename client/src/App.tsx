@@ -15,6 +15,7 @@ import TileSelection from "@/pages/TileSelection";
 import NonConformities from "@/pages/NonConformities";
 import Review from "@/pages/Review";
 import ReportSuccess from "@/pages/ReportSuccess";
+import Configuracoes from "@/pages/Configuracoes";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -55,7 +56,10 @@ function Router() {
       <Route path="/inspection/review" component={Review} />
       <Route path="/inspection/:id/review" component={Review} />
       <Route path="/inspection/:id/report-success" component={ReportSuccess} />
-      
+
+      {/* Settings */}
+      <Route path="/configuracoes" component={Configuracoes} />
+
       {/* Fallback to 404 */}
       <Route component={NotFound} />
     </Switch>
