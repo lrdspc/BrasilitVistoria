@@ -1,93 +1,64 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertClientSchema, insertInspectionSchema, insertTileSchema, insertNonConformitySchema, insertReportSchema } from "@shared/schema";
+import { 
+  insertUserSchema, insertClientSchema, insertInspectionSchema,
+  insertTileSchema, insertNonConformitySchema, insertReportSchema
+} from "@shared/schema";
 import { z } from "zod";
-import multer from "multer";
-import path from "path";
-import fs from "fs";
-
-// File upload configuration
-const upload = multer({
-  dest: 'uploads/',
-  limits: {
-    fileSize: 2 * 1024 * 1024, // 2MB limit
-  },
-  fileFilter: (req, file, cb) => {
-    if (file.mimetype.startsWith('image/')) {
-      cb(null, true);
-    } else {
-      cb(new Error('Only image files are allowed'));
-    }
-  }
-});
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  
-  // Health check
-  app.get("/api/health", (req, res) => {
-    res.json({ status: "ok", timestamp: new Date().toISOString() });
-  });
-
-  // Users
-  app.get("/api/users/:id", async (req, res) => {
+  // Auth routes
+  app.post("/api/auth/register", async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
-      const user = await storage.getUser(id);
-      if (!user) {
-        return res.status(404).json({ message: "User not found" });
+      const userData = insertUserSchema.parse(req.body);
+      
+      // Check if user already exists
+      const existingUser = await storage.getUserByEmail(userData.email);
+      if (existingUser) {
+        return res.status(400).json({ message: "User already exists" });
       }
-      res.json(user);
+      
+      const user = await storage.createUser(userData);
+      res.json({ user: { ...user, password: undefined } });
     } catch (error) {
-      res.status(500).json({ message: "Failed to fetch user" });
+      res.status(400).json({ message: error instanceof Error ? error.message : "Invalid data" });
     }
   });
 
-  app.get("/api/users/email/:email", async (req, res) => {
+  app.post("/api/auth/login", async (req, res) => {
     try {
-      const user = await storage.getUserByEmail(req.params.email);
-      if (!user) {
-        return res.status(404).json({ message: "User not found" });
+      const { email } = req.body;
+      
+      if (!email) {
+        return res.status(400).json({ message: "Email is required" });
       }
-      res.json(user);
+      
+      const user = await storage.getUserByEmail(email);
+      if (!user) {
+        return res.status(401).json({ message: "Invalid credentials" });
+      }
+      
+      res.json({ user: { ...user, password: undefined } });
     } catch (error) {
-      res.status(500).json({ message: "Failed to fetch user" });
+      res.status(400).json({ message: error instanceof Error ? error.message : "Login failed" });
     }
   });
 
-  app.get("/api/users/supabase/:supabaseId", async (req, res) => {
-    try {
-      const user = await storage.getUserBySupabaseId(req.params.supabaseId);
-      if (!user) {
-        return res.status(404).json({ message: "User not found" });
-      }
-      res.json(user);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to fetch user" });
-    }
-  });
-
-  // Clients
+  // Client routes
   app.get("/api/clients", async (req, res) => {
     try {
-      const search = req.query.search as string;
-      const clients = await storage.getClients(search);
-      res.json(clients);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to fetch clients" });
-    }
-  });
-
-  app.get("/api/clients/:id", async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      const client = await storage.getClient(id);
-      if (!client) {
-        return res.status(404).json({ message: "Client not found" });
+      const { search } = req.query;
+      
+      if (search && typeof search === 'string') {
+        const clients = await storage.searchClients(search);
+        res.json(clients);
+      } else {
+        const clients = await storage.listClients();
+        res.json(clients);
       }
-      res.json(client);
     } catch (error) {
-      res.status(500).json({ message: "Failed to fetch client" });
+      res.status(500).json({ message: error instanceof Error ? error.message : "Failed to fetch clients" });
     }
   });
 
@@ -95,60 +66,53 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const clientData = insertClientSchema.parse(req.body);
       
-      // Check for duplicate CNPJ/CPF
-      if (clientData.cnpjCpf) {
-        const existing = await storage.getClientByCnpjCpf(clientData.cnpjCpf);
-        if (existing) {
-          return res.status(400).json({ message: "Client with this CNPJ/CPF already exists" });
-        }
+      // Check if client already exists
+      const existingClient = await storage.getClientByDocument(clientData.document);
+      if (existingClient) {
+        return res.status(400).json({ message: "Client with this document already exists" });
       }
-
-      const client = await storage.createClient(clientData);
-      res.status(201).json(client);
-    } catch (error) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({ message: "Invalid client data", errors: error.errors });
-      }
-      res.status(500).json({ message: "Failed to create client" });
-    }
-  });
-
-  // Inspections
-  app.get("/api/inspections", async (req, res) => {
-    try {
-      const userId = req.query.userId ? parseInt(req.query.userId as string) : 1; // Default user
-      const status = req.query.status as string;
-      const clientId = req.query.clientId ? parseInt(req.query.clientId as string) : undefined;
       
-      const inspections = await storage.getInspections(userId, { status, clientId });
-      res.json(inspections);
+      const client = await storage.createClient(clientData);
+      res.json(client);
     } catch (error) {
-      res.status(500).json({ message: "Failed to fetch inspections" });
+      res.status(400).json({ message: error instanceof Error ? error.message : "Invalid client data" });
     }
   });
 
-  app.get("/api/inspections/:id", async (req, res) => {
+  app.get("/api/clients/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
-      const inspection = await storage.getInspection(id);
-      if (!inspection) {
-        return res.status(404).json({ message: "Inspection not found" });
+      const client = await storage.getClient(id);
+      
+      if (!client) {
+        return res.status(404).json({ message: "Client not found" });
       }
-      res.json(inspection);
+      
+      res.json(client);
     } catch (error) {
-      res.status(500).json({ message: "Failed to fetch inspection" });
+      res.status(500).json({ message: error instanceof Error ? error.message : "Failed to fetch client" });
     }
   });
 
-  app.get("/api/inspections/protocol/:protocol", async (req, res) => {
+  // Inspection routes
+  app.get("/api/inspections", async (req, res) => {
     try {
-      const inspection = await storage.getInspectionByProtocol(req.params.protocol);
-      if (!inspection) {
-        return res.status(404).json({ message: "Inspection not found" });
+      const { userId, status, limit = "10", offset = "0" } = req.query;
+      
+      if (!userId) {
+        return res.status(400).json({ message: "User ID is required" });
       }
-      res.json(inspection);
+      
+      const filters = {
+        status: status as string,
+        limit: parseInt(limit as string),
+        offset: parseInt(offset as string),
+      };
+      
+      const inspections = await storage.getInspectionsByUser(parseInt(userId as string), filters);
+      res.json(inspections);
     } catch (error) {
-      res.status(500).json({ message: "Failed to fetch inspection" });
+      res.status(500).json({ message: error instanceof Error ? error.message : "Failed to fetch inspections" });
     }
   });
 
@@ -156,66 +120,88 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const inspectionData = insertInspectionSchema.parse(req.body);
       
-      // Check for duplicate protocol
-      const existing = await storage.getInspectionByProtocol(inspectionData.protocol);
-      if (existing) {
+      // Check if protocol already exists
+      const existingInspection = await storage.getInspectionByProtocol(inspectionData.protocol);
+      if (existingInspection) {
         return res.status(400).json({ message: "Inspection with this protocol already exists" });
       }
-
+      
       const inspection = await storage.createInspection(inspectionData);
-      res.status(201).json(inspection);
+      res.json(inspection);
     } catch (error) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({ message: "Invalid inspection data", errors: error.errors });
+      res.status(400).json({ message: error instanceof Error ? error.message : "Invalid inspection data" });
+    }
+  });
+
+  app.get("/api/inspections/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const inspection = await storage.getInspection(id);
+      
+      if (!inspection) {
+        return res.status(404).json({ message: "Inspection not found" });
       }
-      res.status(500).json({ message: "Failed to create inspection" });
+      
+      res.json(inspection);
+    } catch (error) {
+      res.status(500).json({ message: error instanceof Error ? error.message : "Failed to fetch inspection" });
     }
   });
 
   app.put("/api/inspections/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id);
-      const updateData = insertInspectionSchema.partial().parse(req.body);
+      const updateData = req.body;
       
       const inspection = await storage.updateInspection(id, updateData);
+      
       if (!inspection) {
         return res.status(404).json({ message: "Inspection not found" });
       }
+      
       res.json(inspection);
     } catch (error) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({ message: "Invalid inspection data", errors: error.errors });
-      }
-      res.status(500).json({ message: "Failed to update inspection" });
+      res.status(400).json({ message: error instanceof Error ? error.message : "Failed to update inspection" });
     }
   });
 
-  // Tiles
+  // Tile routes
   app.get("/api/inspections/:inspectionId/tiles", async (req, res) => {
     try {
       const inspectionId = parseInt(req.params.inspectionId);
       const tiles = await storage.getTilesByInspection(inspectionId);
       res.json(tiles);
     } catch (error) {
-      res.status(500).json({ message: "Failed to fetch tiles" });
+      res.status(500).json({ message: error instanceof Error ? error.message : "Failed to fetch tiles" });
     }
   });
 
   app.post("/api/inspections/:inspectionId/tiles", async (req, res) => {
     try {
       const inspectionId = parseInt(req.params.inspectionId);
-      const tileData = insertTileSchema.parse({
-        ...req.body,
-        inspectionId
-      });
-
+      const tileData = insertTileSchema.parse({ ...req.body, inspectionId });
+      
       const tile = await storage.createTile(tileData);
-      res.status(201).json(tile);
+      res.json(tile);
     } catch (error) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({ message: "Invalid tile data", errors: error.errors });
+      res.status(400).json({ message: error instanceof Error ? error.message : "Invalid tile data" });
+    }
+  });
+
+  app.put("/api/tiles/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const updateData = req.body;
+      
+      const tile = await storage.updateTile(id, updateData);
+      
+      if (!tile) {
+        return res.status(404).json({ message: "Tile not found" });
       }
-      res.status(500).json({ message: "Failed to create tile" });
+      
+      res.json(tile);
+    } catch (error) {
+      res.status(400).json({ message: error instanceof Error ? error.message : "Failed to update tile" });
     }
   });
 
@@ -223,124 +209,89 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const id = parseInt(req.params.id);
       const deleted = await storage.deleteTile(id);
+      
       if (!deleted) {
         return res.status(404).json({ message: "Tile not found" });
       }
-      res.status(204).send();
+      
+      res.json({ success: true });
     } catch (error) {
-      res.status(500).json({ message: "Failed to delete tile" });
+      res.status(500).json({ message: error instanceof Error ? error.message : "Failed to delete tile" });
     }
   });
 
-  // Non-conformities
+  // Non-conformity routes
   app.get("/api/inspections/:inspectionId/non-conformities", async (req, res) => {
     try {
       const inspectionId = parseInt(req.params.inspectionId);
       const nonConformities = await storage.getNonConformitiesByInspection(inspectionId);
       res.json(nonConformities);
     } catch (error) {
-      res.status(500).json({ message: "Failed to fetch non-conformities" });
+      res.status(500).json({ message: error instanceof Error ? error.message : "Failed to fetch non-conformities" });
     }
   });
 
   app.post("/api/inspections/:inspectionId/non-conformities", async (req, res) => {
     try {
       const inspectionId = parseInt(req.params.inspectionId);
-      const nonConformityData = insertNonConformitySchema.parse({
-        ...req.body,
-        inspectionId
-      });
-
-      const nonConformity = await storage.createNonConformity(nonConformityData);
-      res.status(201).json(nonConformity);
-    } catch (error) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({ message: "Invalid non-conformity data", errors: error.errors });
-      }
-      res.status(500).json({ message: "Failed to create non-conformity" });
-    }
-  });
-
-  // Photo upload
-  app.post("/api/upload/photo", upload.single('photo'), async (req, res) => {
-    try {
-      if (!req.file) {
-        return res.status(400).json({ message: "No photo uploaded" });
-      }
-
-      // In a real app, you'd upload to Supabase Storage or similar
-      const photoUrl = `/uploads/${req.file.filename}`;
+      const nonConformityData = insertNonConformitySchema.parse({ ...req.body, inspectionId });
       
-      res.json({ 
-        url: photoUrl,
-        filename: req.file.filename,
-        size: req.file.size
-      });
+      const nonConformity = await storage.createNonConformity(nonConformityData);
+      res.json(nonConformity);
     } catch (error) {
-      res.status(500).json({ message: "Failed to upload photo" });
+      res.status(400).json({ message: error instanceof Error ? error.message : "Invalid non-conformity data" });
     }
   });
 
-  // Reports
+  app.put("/api/non-conformities/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const updateData = req.body;
+      
+      const nonConformity = await storage.updateNonConformity(id, updateData);
+      
+      if (!nonConformity) {
+        return res.status(404).json({ message: "Non-conformity not found" });
+      }
+      
+      res.json(nonConformity);
+    } catch (error) {
+      res.status(400).json({ message: error instanceof Error ? error.message : "Failed to update non-conformity" });
+    }
+  });
+
+  // Report routes
   app.post("/api/inspections/:inspectionId/reports", async (req, res) => {
     try {
       const inspectionId = parseInt(req.params.inspectionId);
-      const reportData = insertReportSchema.parse({
-        ...req.body,
-        inspectionId
-      });
-
+      const reportData = insertReportSchema.parse({ ...req.body, inspectionId });
+      
       const report = await storage.createReport(reportData);
-      res.status(201).json(report);
+      res.json(report);
     } catch (error) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({ message: "Invalid report data", errors: error.errors });
-      }
-      res.status(500).json({ message: "Failed to create report" });
+      res.status(400).json({ message: error instanceof Error ? error.message : "Invalid report data" });
     }
   });
 
   app.get("/api/inspections/:inspectionId/reports", async (req, res) => {
     try {
       const inspectionId = parseInt(req.params.inspectionId);
-      const report = await storage.getReportByInspection(inspectionId);
-      if (!report) {
-        return res.status(404).json({ message: "Report not found" });
-      }
-      res.json(report);
+      const reports = await storage.getReportsByInspection(inspectionId);
+      res.json(reports);
     } catch (error) {
-      res.status(500).json({ message: "Failed to fetch report" });
+      res.status(500).json({ message: error instanceof Error ? error.message : "Failed to fetch reports" });
     }
   });
 
-  // Sync endpoints
-  app.get("/api/sync/unsynced", async (req, res) => {
-    try {
-      const inspections = await storage.getUnsyncedInspections();
-      res.json(inspections);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to fetch unsynced inspections" });
-    }
+  // Utility routes
+  app.get("/api/config/non-conformities", (req, res) => {
+    const { NON_CONFORMITY_LIST } = require("@shared/schema");
+    res.json(NON_CONFORMITY_LIST);
   });
 
-  app.post("/api/sync/mark/:id", async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      await storage.markInspectionSynced(id);
-      res.status(204).send();
-    } catch (error) {
-      res.status(500).json({ message: "Failed to mark inspection as synced" });
-    }
-  });
-
-  // Serve uploaded files
-  app.use('/uploads', (req, res, next) => {
-    const filePath = path.join(process.cwd(), 'uploads', req.path);
-    if (fs.existsSync(filePath)) {
-      res.sendFile(filePath);
-    } else {
-      res.status(404).json({ message: "File not found" });
-    }
+  app.get("/api/config/tiles", (req, res) => {
+    const { TILE_CONFIG } = require("@shared/schema");
+    res.json(TILE_CONFIG);
   });
 
   const httpServer = createServer(app);

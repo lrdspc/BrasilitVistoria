@@ -1,80 +1,38 @@
-import { createClient } from '@supabase/supabase-js';
+// Note: This file provides Supabase configuration structure for when DATABASE_URL is available
+// Currently using in-memory storage until Supabase project is configured
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://your-project.supabase.co';
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'your-anon-key';
+export interface SupabaseConfig {
+  url: string;
+  anonKey: string;
+}
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-  auth: {
-    persistSession: true,
-    autoRefreshToken: true,
-  },
-});
-
-// Auth helpers
-export const signInWithEmail = async (email: string, password: string) => {
-  const { data, error } = await supabase.auth.signInWithPassword({
-    email,
-    password,
-  });
-  return { data, error };
+export const supabaseConfig: SupabaseConfig = {
+  url: import.meta.env.VITE_SUPABASE_URL || "http://localhost:54321",
+  anonKey: import.meta.env.VITE_SUPABASE_ANON_KEY || "placeholder",
 };
 
-export const signInWithGoogle = async () => {
-  const { data, error } = await supabase.auth.signInWithOAuth({
-    provider: 'google',
-    options: {
-      redirectTo: `${window.location.origin}/auth/callback`,
-    },
-  });
-  return { data, error };
+// Auth helpers for future Supabase integration
+export interface AuthUser {
+  id: string;
+  email: string;
+  name: string;
+}
+
+export interface AuthSession {
+  access_token: string;
+  refresh_token: string;
+  user: AuthUser;
+}
+
+// Storage helpers for file uploads
+export const uploadFile = async (bucket: string, path: string, file: File): Promise<string> => {
+  // For now, return a placeholder URL
+  // In production, this would upload to Supabase Storage
+  return `https://placeholder.com/${bucket}/${path}`;
 };
 
-export const signUp = async (email: string, password: string, name: string) => {
-  const { data, error } = await supabase.auth.signUp({
-    email,
-    password,
-    options: {
-      data: {
-        name,
-      },
-    },
-  });
-  return { data, error };
-};
-
-export const signOut = async () => {
-  const { error } = await supabase.auth.signOut();
-  return { error };
-};
-
-export const resetPassword = async (email: string) => {
-  const { data, error } = await supabase.auth.resetPasswordForEmail(email, {
-    redirectTo: `${window.location.origin}/auth/reset-password`,
-  });
-  return { data, error };
-};
-
-// Storage helpers
-export const uploadPhoto = async (file: File, path: string) => {
-  const { data, error } = await supabase.storage
-    .from('photos')
-    .upload(path, file, {
-      cacheControl: '3600',
-      upsert: false,
-    });
-  return { data, error };
-};
-
-export const getPhotoUrl = (path: string) => {
-  const { data } = supabase.storage
-    .from('photos')
-    .getPublicUrl(path);
-  return data.publicUrl;
-};
-
-export const deletePhoto = async (path: string) => {
-  const { data, error } = await supabase.storage
-    .from('photos')
-    .remove([path]);
-  return { data, error };
+export const getFileUrl = (bucket: string, path: string): string => {
+  // For now, return a placeholder URL
+  // In production, this would return the Supabase Storage URL
+  return `https://placeholder.com/${bucket}/${path}`;
 };

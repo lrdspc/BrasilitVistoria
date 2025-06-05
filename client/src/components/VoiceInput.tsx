@@ -1,109 +1,68 @@
-import { useState, useRef, useEffect } from 'react';
-import { Button } from '@/components/ui/button';
-import { Mic, MicOff, Square } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { useState, useRef } from "react";
+import { Mic, MicOff, Square } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 interface VoiceInputProps {
-  onTranscript: (transcript: string) => void;
-  onError?: (error: string) => void;
-  className?: string;
+  onTranscript: (text: string) => void;
   disabled?: boolean;
 }
 
-export const VoiceInput = ({ onTranscript, onError, className, disabled }: VoiceInputProps) => {
+export function VoiceInput({ onTranscript, disabled }: VoiceInputProps) {
   const [isListening, setIsListening] = useState(false);
-  const [isSupported, setIsSupported] = useState(false);
-  const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const [isSupported, setIsSupported] = useState(
+    typeof window !== "undefined" && "webkitSpeechRecognition" in window
+  );
+  const recognitionRef = useRef<any>(null);
 
-  useEffect(() => {
-    // Check if speech recognition is supported
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    
-    if (SpeechRecognition) {
-      setIsSupported(true);
-      
-      const recognition = new SpeechRecognition();
-      recognition.continuous = true;
-      recognition.interimResults = true;
-      recognition.lang = 'pt-BR';
+  const startListening = () => {
+    if (!isSupported || disabled) return;
 
-      recognition.onstart = () => {
-        setIsListening(true);
-      };
+    const SpeechRecognition = (window as any).webkitSpeechRecognition;
+    recognitionRef.current = new SpeechRecognition();
 
-      recognition.onend = () => {
-        setIsListening(false);
-      };
+    recognitionRef.current.continuous = true;
+    recognitionRef.current.interimResults = true;
+    recognitionRef.current.lang = "pt-BR";
 
-      recognition.onresult = (event) => {
-        let finalTranscript = '';
-        
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-          const transcript = event.results[i][0].transcript;
-          if (event.results[i].isFinal) {
-            finalTranscript += transcript;
-          }
+    recognitionRef.current.onstart = () => {
+      setIsListening(true);
+    };
+
+    recognitionRef.current.onresult = (event: any) => {
+      let finalTranscript = "";
+      let interimTranscript = "";
+
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const transcript = event.results[i][0].transcript;
+        if (event.results[i].isFinal) {
+          finalTranscript += transcript;
+        } else {
+          interimTranscript += transcript;
         }
+      }
 
-        if (finalTranscript) {
-          onTranscript(finalTranscript.trim());
-        }
-      };
-
-      recognition.onerror = (event) => {
-        console.error('Speech recognition error:', event.error);
-        setIsListening(false);
-        
-        const errorMessages: Record<string, string> = {
-          'not-allowed': 'Permissão negada para usar o microfone',
-          'no-speech': 'Nenhuma fala detectada',
-          'network': 'Erro de rede',
-          'audio-capture': 'Erro ao capturar áudio',
-          'service-not-allowed': 'Serviço não permitido',
-        };
-
-        const message = errorMessages[event.error] || 'Erro desconhecido no reconhecimento de voz';
-        onError?.(message);
-      };
-
-      recognitionRef.current = recognition;
-    } else {
-      setIsSupported(false);
-      onError?.('Reconhecimento de voz não suportado neste navegador');
-    }
-
-    return () => {
-      if (recognitionRef.current) {
-        recognitionRef.current.stop();
+      if (finalTranscript) {
+        onTranscript(finalTranscript);
       }
     };
-  }, [onTranscript, onError]);
 
-  const startListening = async () => {
-    if (!isSupported || !recognitionRef.current || disabled) return;
+    recognitionRef.current.onerror = (event: any) => {
+      console.error("Speech recognition error:", event.error);
+      setIsListening(false);
+    };
 
-    try {
-      // Request microphone permission
-      await navigator.mediaDevices.getUserMedia({ audio: true });
-      recognitionRef.current.start();
-    } catch (error) {
-      console.error('Microphone permission error:', error);
-      onError?.('Permissão para usar o microfone é necessária');
-    }
+    recognitionRef.current.onend = () => {
+      setIsListening(false);
+    };
+
+    recognitionRef.current.start();
   };
 
   const stopListening = () => {
-    if (recognitionRef.current && isListening) {
+    if (recognitionRef.current) {
       recognitionRef.current.stop();
     }
-  };
-
-  const toggleListening = () => {
-    if (isListening) {
-      stopListening();
-    } else {
-      startListening();
-    }
+    setIsListening(false);
   };
 
   if (!isSupported) {
@@ -115,30 +74,25 @@ export const VoiceInput = ({ onTranscript, onError, className, disabled }: Voice
       type="button"
       variant="ghost"
       size="sm"
-      onClick={toggleListening}
+      onClick={isListening ? stopListening : startListening}
       disabled={disabled}
-      className={cn(
-        'transition-colors',
-        {
-          'text-red-500 hover:text-red-600': isListening,
-          'text-blue-600 hover:text-blue-700': !isListening,
-        },
-        className
-      )}
+      className={`p-2 ${
+        isListening
+          ? "text-red-600 hover:text-red-700 bg-red-50"
+          : "text-blue-600 hover:text-blue-700"
+      }`}
     >
       {isListening ? (
-        <Square className="w-4 h-4" />
+        <>
+          <Square className="w-4 h-4 mr-1" />
+          Parar
+        </>
       ) : (
-        <Mic className="w-4 h-4" />
+        <>
+          <Mic className="w-4 h-4 mr-1" />
+          Falar
+        </>
       )}
     </Button>
   );
-};
-
-// Add types for Speech Recognition API
-declare global {
-  interface Window {
-    SpeechRecognition: typeof SpeechRecognition;
-    webkitSpeechRecognition: typeof SpeechRecognition;
-  }
 }

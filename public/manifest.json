@@ -1,0 +1,91 @@
+{
+  "name": "VIGITEL - Vistoria e Gestão Inteligente de Telhas",
+  "short_name": "VIGITEL",
+  "description": "PWA para inspeções técnicas offline com geração automatizada de relatórios DOCX",
+  "version": "1.0.0",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "theme_color": "#1565C0",
+  "background_color": "#FFFFFF",
+  "scope": "/",
+  "lang": "pt-BR",
+  "categories": ["productivity", "business", "utilities"],
+  "icons": [
+    {
+      "src": "data:image/svg+xml,%3csvg width='48' height='48' viewBox='0 0 24 24' fill='none' xmlns='http://www.w3.org/2000/svg'%3e%3cpath d='M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z' fill='%231565C0'/%3e%3cpolyline points='9,22 9,12 15,12 15,22' stroke='%23ffffff' stroke-width='2' fill='none'/%3e%3c/svg%3e",
+      "sizes": "48x48",
+      "type": "image/svg+xml"
+    },
+    {
+      "src": "data:image/svg+xml,%3csvg width='72' height='72' viewBox='0 0 24 24' fill='none' xmlns='http://www.w3.org/2000/svg'%3e%3cpath d='M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z' fill='%231565C0'/%3e%3cpolyline points='9,22 9,12 15,12 15,22' stroke='%23ffffff' stroke-width='2' fill='none'/%3e%3c/svg%3e",
+      "sizes": "72x72",
+      "type": "image/svg+xml"
+    },
+    {
+      "src": "data:image/svg+xml,%3csvg width='96' height='96' viewBox='0 0 24 24' fill='none' xmlns='http://www.w3.org/2000/svg'%3e%3cpath d='M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z' fill='%231565C0'/%3e%3cpolyline points='9,22 9,12 15,12 15,22' stroke='%23ffffff' stroke-width='2' fill='none'/%3e%3c/svg%3e",
+      "sizes": "96x96",
+      "type": "image/svg+xml"
+    },
+    {
+      "src": "data:image/svg+xml,%3csvg width='144' height='144' viewBox='0 0 24 24' fill='none' xmlns='http://www.w3.org/2000/svg'%3e%3cpath d='M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z' fill='%231565C0'/%3e%3cpolyline points='9,22 9,12 15,12 15,22' stroke='%23ffffff' stroke-width='2' fill='none'/%3e%3c/svg%3e",
+      "sizes": "144x144",
+      "type": "image/svg+xml"
+    },
+    {
+      "src": "data:image/svg+xml,%3csvg width='192' height='192' viewBox='0 0 24 24' fill='none' xmlns='http://www.w3.org/2000/svg'%3e%3cpath d='M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z' fill='%231565C0'/%3e%3cpolyline points='9,22 9,12 15,12 15,22' stroke='%23ffffff' stroke-width='2' fill='none'/%3e%3c/svg%3e",
+      "sizes": "192x192",
+      "type": "image/svg+xml"
+    },
+    {
+      "src": "data:image/svg+xml,%3csvg width='512' height='512' viewBox='0 0 24 24' fill='none' xmlns='http://www.w3.org/2000/svg'%3e%3cpath d='M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z' fill='%231565C0'/%3e%3cpolyline points='9,22 9,12 15,12 15,22' stroke='%23ffffff' stroke-width='2' fill='none'/%3e%3c/svg%3e",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "data:image/svg+xml,%3csvg width='540' height='720' viewBox='0 0 270 360' fill='none' xmlns='http://www.w3.org/2000/svg'%3e%3crect width='270' height='360' fill='%23f3f4f6'/%3e%3crect x='0' y='0' width='270' height='60' fill='%231565C0'/%3e%3ctext x='20' y='35' fill='white' font-family='Arial' font-size='18' font-weight='bold'%3eVIGITEL%3c/text%3e%3ctext x='20' y='50' fill='%23a5b4fc' font-family='Arial' font-size='12'%3eSuas Vistorias%3c/text%3e%3crect x='20' y='80' width='230' height='40' rx='8' fill='white'/%3e%3ctext x='30' y='105' fill='%236b7280' font-family='Arial' font-size='14'%3eBuscar por cliente ou protocolo%3c/text%3e%3crect x='20' y='140' width='230' height='60' rx='8' fill='white'/%3e%3ctext x='30' y='165' fill='%23111827' font-family='Arial' font-size='16' font-weight='bold'%3eConstrutora XYZ%3c/text%3e%3ctext x='30' y='185' fill='%236b7280' font-family='Arial' font-size='14'%3eFAR123456%3c/text%3e%3c/svg%3e",
+      "sizes": "540x720",
+      "type": "image/svg+xml",
+      "form_factor": "narrow",
+      "label": "Dashboard de vistorias"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Nova Vistoria",
+      "short_name": "Nova",
+      "description": "Iniciar uma nova vistoria técnica",
+      "url": "/inspection/client",
+      "icons": [
+        {
+          "src": "data:image/svg+xml,%3csvg width='96' height='96' viewBox='0 0 24 24' fill='none' xmlns='http://www.w3.org/2000/svg'%3e%3cpath d='M12 5v14m-7-7h14' stroke='%231565C0' stroke-width='2' stroke-linecap='round'/%3e%3c/svg%3e",
+          "sizes": "96x96",
+          "type": "image/svg+xml"
+        }
+      ]
+    },
+    {
+      "name": "Dashboard",
+      "short_name": "Home",
+      "description": "Visualizar suas vistorias",
+      "url": "/dashboard",
+      "icons": [
+        {
+          "src": "data:image/svg+xml,%3csvg width='96' height='96' viewBox='0 0 24 24' fill='none' xmlns='http://www.w3.org/2000/svg'%3e%3cpath d='M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z' fill='%231565C0'/%3e%3c/svg%3e",
+          "sizes": "96x96",
+          "type": "image/svg+xml"
+        }
+      ]
+    }
+  ],
+  "prefer_related_applications": false,
+  "protocol_handlers": [
+    {
+      "protocol": "web+vigitel",
+      "url": "/inspection/client?protocol=%s"
+    }
+  ]
+}

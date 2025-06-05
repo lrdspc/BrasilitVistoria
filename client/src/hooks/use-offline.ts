@@ -1,157 +1,138 @@
 import { useState, useEffect } from 'react';
-import { offlineStorage } from '@/lib/offline-storage';
-import { InspectionFormData } from '@/types/inspection';
-import { useToast } from '@/hooks/use-toast';
+import { offlineManager } from '@/lib/offline';
 
 export function useOffline() {
   const [isOnline, setIsOnline] = useState(navigator.onLine);
-  const [pendingSyncCount, setPendingSyncCount] = useState(0);
-  const { toast } = useToast();
+  const [syncQueue, setSyncQueue] = useState<any[]>([]);
 
   useEffect(() => {
-    const handleOnline = () => {
-      setIsOnline(true);
-      toast({
-        title: "Conexão restaurada",
-        description: "Sincronizando dados...",
-      });
-      syncPendingData();
-    };
+    const updateOnlineStatus = () => setIsOnline(navigator.onLine);
+    
+    window.addEventListener('online', updateOnlineStatus);
+    window.addEventListener('offline', updateOnlineStatus);
 
-    const handleOffline = () => {
-      setIsOnline(false);
-      toast({
-        title: "Modo offline ativado",
-        description: "Dados serão sincronizados quando a conexão for restaurada.",
-        variant: "destructive"
-      });
-    };
+    // Initialize offline manager
+    offlineManager.init();
 
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
-
-    // Check for pending sync data on mount
-    checkPendingSyncData();
+    // Load sync queue
+    loadSyncQueue();
 
     return () => {
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('online', updateOnlineStatus);
+      window.removeEventListener('offline', updateOnlineStatus);
     };
   }, []);
 
-  const checkPendingSyncData = async () => {
+  const loadSyncQueue = async () => {
     try {
-      const pendingInspections = await offlineStorage.getPendingSyncInspections();
-      setPendingSyncCount(pendingInspections.length);
+      const queue = await offlineManager.getSyncQueue();
+      setSyncQueue(queue);
     } catch (error) {
-      console.error('Failed to check pending sync data:', error);
+      console.error('Failed to load sync queue:', error);
     }
   };
 
-  const syncPendingData = async () => {
+  const saveDraft = async (draft: any) => {
     try {
-      const pendingInspections = await offlineStorage.getPendingSyncInspections();
-      
-      for (const inspection of pendingInspections) {
-        await syncInspection(inspection);
-      }
-
-      if (pendingInspections.length > 0) {
-        toast({
-          title: "Sincronização concluída",
-          description: `${pendingInspections.length} vistorias sincronizadas com sucesso.`,
+      await offlineManager.saveDraft(draft);
+      if (!isOnline) {
+        await offlineManager.addToSyncQueue({
+          type: 'inspection',
+          action: 'create',
+          data: draft,
         });
-        setPendingSyncCount(0);
+        await loadSyncQueue();
       }
     } catch (error) {
-      console.error('Sync failed:', error);
-      toast({
-        title: "Erro na sincronização",
-        description: "Algumas vistorias não puderam ser sincronizadas. Tente novamente.",
-        variant: "destructive"
-      });
-    }
-  };
-
-  const syncInspection = async (inspection: InspectionFormData) => {
-    try {
-      // Create inspection on server
-      const response = await fetch('/api/inspections', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          protocol: inspection.protocol,
-          clientName: inspection.clientName,
-          date: new Date(inspection.date),
-          enterprise: inspection.enterprise,
-          city: inspection.city,
-          state: inspection.state,
-          address: inspection.address,
-          cep: inspection.cep,
-          subject: inspection.subject,
-          technicianName: inspection.technicianName,
-          status: inspection.status
-        })
-      });
-
-      if (!response.ok) throw new Error('Failed to sync inspection');
-
-      const createdInspection = await response.json();
-
-      // Sync tiles
-      for (const tile of inspection.tiles) {
-        await fetch(`/api/inspections/${createdInspection.id}/tiles`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(tile)
-        });
-      }
-
-      // Sync non-conformities
-      for (const nc of inspection.nonConformities.filter(nc => nc.selected)) {
-        await fetch(`/api/inspections/${createdInspection.id}/non-conformities`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            title: nc.title,
-            notes: nc.notes,
-            photos: nc.photos
-          })
-        });
-      }
-
-      // Remove from offline storage after successful sync
-      if (inspection.offlineId) {
-        await offlineStorage.deleteInspection(inspection.offlineId);
-      }
-    } catch (error) {
-      console.error('Failed to sync inspection:', inspection.protocol, error);
+      console.error('Failed to save draft:', error);
       throw error;
     }
   };
 
-  const saveOffline = async (inspection: InspectionFormData) => {
+  const savePhoto = async (photo: Blob, metadata: any) => {
     try {
-      await offlineStorage.saveInspection(inspection);
-      toast({
-        title: "Dados salvos offline",
-        description: "A vistoria será sincronizada quando houver conexão.",
-      });
+      const photoId = await offlineManager.savePhoto(photo, metadata);
+      if (!isOnline) {
+        await offlineManager.addToSyncQueue({
+          type: 'photo',
+          action: 'upload',
+          data: { photoId, metadata },
+        });
+        await loadSyncQueue();
+      }
+      return photoId;
     } catch (error) {
-      console.error('Failed to save offline:', error);
-      toast({
-        title: "Erro ao salvar",
-        description: "Não foi possível salvar os dados offline.",
-        variant: "destructive"
-      });
+      console.error('Failed to save photo:', error);
+      throw error;
+    }
+  };
+
+  const sync = async () => {
+    if (!isOnline) {
+      throw new Error('Cannot sync while offline');
+    }
+
+    try {
+      const queue = await offlineManager.getSyncQueue();
+      
+      for (const item of queue) {
+        try {
+          if (item.type === 'inspection') {
+            // Sync inspection data
+            const response = await fetch('/api/inspections', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify(item.data),
+            });
+            
+            if (!response.ok) {
+              throw new Error(`Sync failed: ${response.statusText}`);
+            }
+          } else if (item.type === 'photo') {
+            // Sync photo data
+            const photoBlob = await offlineManager.getPhoto(item.data.photoId);
+            if (photoBlob) {
+              const formData = new FormData();
+              formData.append('photo', photoBlob);
+              formData.append('inspectionId', item.data.metadata.inspectionId);
+              formData.append('nonConformityId', item.data.metadata.nonConformityId);
+
+              const response = await fetch('/api/photos', {
+                method: 'POST',
+                body: formData,
+              });
+
+              if (!response.ok) {
+                throw new Error(`Photo sync failed: ${response.statusText}`);
+              }
+            }
+          }
+        } catch (error) {
+          console.error(`Failed to sync item ${item.id}:`, error);
+          // Continue with other items
+        }
+      }
+
+      // Clear sync queue after successful sync
+      await offlineManager.clearSyncQueue();
+      setSyncQueue([]);
+      
+      return true;
+    } catch (error) {
+      console.error('Sync failed:', error);
+      throw error;
     }
   };
 
   return {
     isOnline,
-    pendingSyncCount,
-    syncPendingData,
-    saveOffline,
-    checkPendingSyncData
+    syncQueue,
+    pendingSync: syncQueue.length > 0,
+    saveDraft,
+    savePhoto,
+    sync,
+    loadSyncQueue,
   };
 }

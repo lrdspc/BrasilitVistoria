@@ -1,72 +1,77 @@
-import { users, clients, inspections, tiles, nonConformities, reports, type User, type Client, type Inspection, type InsertUser, type InsertClient, type InsertInspection, type InsertTile, type InsertNonConformity, type InsertReport, type Tile, type NonConformity, type Report } from "@shared/schema";
+import { 
+  users, clients, inspections, tiles, nonConformities, reports,
+  type User, type InsertUser, type Client, type InsertClient,
+  type Inspection, type InsertInspection, type Tile, type InsertTile,
+  type NonConformity, type InsertNonConformity, type Report, type InsertReport
+} from "@shared/schema";
 
 export interface IStorage {
   // Users
   getUser(id: number): Promise<User | undefined>;
   getUserByEmail(email: string): Promise<User | undefined>;
-  getUserBySupabaseId(supabaseId: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
-  updateUser(id: number, data: Partial<InsertUser>): Promise<User | undefined>;
+  updateUser(id: number, user: Partial<InsertUser>): Promise<User | undefined>;
 
   // Clients
   getClient(id: number): Promise<Client | undefined>;
-  getClientByName(name: string): Promise<Client | undefined>;
-  getClientByCnpjCpf(cnpjCpf: string): Promise<Client | undefined>;
-  getClients(search?: string): Promise<Client[]>;
+  getClientByDocument(document: string): Promise<Client | undefined>;
+  searchClients(query: string): Promise<Client[]>;
   createClient(client: InsertClient): Promise<Client>;
-  updateClient(id: number, data: Partial<InsertClient>): Promise<Client | undefined>;
+  updateClient(id: number, client: Partial<InsertClient>): Promise<Client | undefined>;
+  listClients(): Promise<Client[]>;
 
   // Inspections
   getInspection(id: number): Promise<Inspection | undefined>;
   getInspectionByProtocol(protocol: string): Promise<Inspection | undefined>;
-  getInspections(userId: number, filters?: { status?: string; clientId?: number }): Promise<Inspection[]>;
+  getInspectionsByUser(userId: number, filters?: { status?: string; limit?: number; offset?: number }): Promise<Inspection[]>;
   createInspection(inspection: InsertInspection): Promise<Inspection>;
-  updateInspection(id: number, data: Partial<InsertInspection>): Promise<Inspection | undefined>;
+  updateInspection(id: number, inspection: Partial<InsertInspection>): Promise<Inspection | undefined>;
   deleteInspection(id: number): Promise<boolean>;
 
   // Tiles
   getTilesByInspection(inspectionId: number): Promise<Tile[]>;
   createTile(tile: InsertTile): Promise<Tile>;
-  updateTile(id: number, data: Partial<InsertTile>): Promise<Tile | undefined>;
+  updateTile(id: number, tile: Partial<InsertTile>): Promise<Tile | undefined>;
   deleteTile(id: number): Promise<boolean>;
 
   // Non-conformities
   getNonConformitiesByInspection(inspectionId: number): Promise<NonConformity[]>;
   createNonConformity(nonConformity: InsertNonConformity): Promise<NonConformity>;
-  updateNonConformity(id: number, data: Partial<InsertNonConformity>): Promise<NonConformity | undefined>;
+  updateNonConformity(id: number, nonConformity: Partial<InsertNonConformity>): Promise<NonConformity | undefined>;
   deleteNonConformity(id: number): Promise<boolean>;
 
   // Reports
-  getReportByInspection(inspectionId: number): Promise<Report | undefined>;
+  getReportsByInspection(inspectionId: number): Promise<Report[]>;
   createReport(report: InsertReport): Promise<Report>;
-
-  // Sync methods
-  getUnsyncedInspections(): Promise<Inspection[]>;
-  markInspectionSynced(id: number): Promise<void>;
 }
 
 export class MemStorage implements IStorage {
-  private users: Map<number, User> = new Map();
-  private clients: Map<number, Client> = new Map();
-  private inspections: Map<number, Inspection> = new Map();
-  private tiles: Map<number, Tile> = new Map();
-  private nonConformities: Map<number, NonConformity> = new Map();
-  private reports: Map<number, Report> = new Map();
-  
-  private currentUserId = 1;
-  private currentClientId = 1;
-  private currentInspectionId = 1;
-  private currentTileId = 1;
-  private currentNonConformityId = 1;
-  private currentReportId = 1;
+  private users: Map<number, User>;
+  private clients: Map<number, Client>;
+  private inspections: Map<number, Inspection>;
+  private tiles: Map<number, Tile>;
+  private nonConformities: Map<number, NonConformity>;
+  private reports: Map<number, Report>;
+  private currentUserId: number;
+  private currentClientId: number;
+  private currentInspectionId: number;
+  private currentTileId: number;
+  private currentNonConformityId: number;
+  private currentReportId: number;
 
   constructor() {
-    // Initialize with a default user
-    this.createUser({
-      email: "tecnico@brasilit.com",
-      name: "João Silva",
-      supabaseId: "default-user"
-    });
+    this.users = new Map();
+    this.clients = new Map();
+    this.inspections = new Map();
+    this.tiles = new Map();
+    this.nonConformities = new Map();
+    this.reports = new Map();
+    this.currentUserId = 1;
+    this.currentClientId = 1;
+    this.currentInspectionId = 1;
+    this.currentTileId = 1;
+    this.currentNonConformityId = 1;
+    this.currentReportId = 1;
   }
 
   // Users
@@ -78,26 +83,22 @@ export class MemStorage implements IStorage {
     return Array.from(this.users.values()).find(user => user.email === email);
   }
 
-  async getUserBySupabaseId(supabaseId: string): Promise<User | undefined> {
-    return Array.from(this.users.values()).find(user => user.supabaseId === supabaseId);
-  }
-
   async createUser(insertUser: InsertUser): Promise<User> {
     const id = this.currentUserId++;
-    const user: User = {
-      ...insertUser,
-      id,
-      createdAt: new Date(),
+    const user: User = { 
+      ...insertUser, 
+      id, 
+      createdAt: new Date() 
     };
     this.users.set(id, user);
     return user;
   }
 
-  async updateUser(id: number, data: Partial<InsertUser>): Promise<User | undefined> {
+  async updateUser(id: number, updateUser: Partial<InsertUser>): Promise<User | undefined> {
     const user = this.users.get(id);
     if (!user) return undefined;
     
-    const updatedUser = { ...user, ...data };
+    const updatedUser = { ...user, ...updateUser };
     this.users.set(id, updatedUser);
     return updatedUser;
   }
@@ -107,44 +108,40 @@ export class MemStorage implements IStorage {
     return this.clients.get(id);
   }
 
-  async getClientByName(name: string): Promise<Client | undefined> {
-    return Array.from(this.clients.values()).find(client => 
-      client.name.toLowerCase().includes(name.toLowerCase())
-    );
+  async getClientByDocument(document: string): Promise<Client | undefined> {
+    return Array.from(this.clients.values()).find(client => client.document === document);
   }
 
-  async getClientByCnpjCpf(cnpjCpf: string): Promise<Client | undefined> {
-    return Array.from(this.clients.values()).find(client => client.cnpjCpf === cnpjCpf);
-  }
-
-  async getClients(search?: string): Promise<Client[]> {
-    const allClients = Array.from(this.clients.values());
-    if (!search) return allClients;
-    
-    return allClients.filter(client =>
-      client.name.toLowerCase().includes(search.toLowerCase()) ||
-      (client.cnpjCpf && client.cnpjCpf.includes(search))
-    );
+  async searchClients(query: string): Promise<Client[]> {
+    const lowerQuery = query.toLowerCase();
+    return Array.from(this.clients.values()).filter(client => 
+      client.name.toLowerCase().includes(lowerQuery) ||
+      client.document.includes(query)
+    ).slice(0, 5);
   }
 
   async createClient(insertClient: InsertClient): Promise<Client> {
     const id = this.currentClientId++;
-    const client: Client = {
-      ...insertClient,
-      id,
-      createdAt: new Date(),
+    const client: Client = { 
+      ...insertClient, 
+      id, 
+      createdAt: new Date() 
     };
     this.clients.set(id, client);
     return client;
   }
 
-  async updateClient(id: number, data: Partial<InsertClient>): Promise<Client | undefined> {
+  async updateClient(id: number, updateClient: Partial<InsertClient>): Promise<Client | undefined> {
     const client = this.clients.get(id);
     if (!client) return undefined;
     
-    const updatedClient = { ...client, ...data };
+    const updatedClient = { ...client, ...updateClient };
     this.clients.set(id, updatedClient);
     return updatedClient;
+  }
+
+  async listClients(): Promise<Client[]> {
+    return Array.from(this.clients.values());
   }
 
   // Inspections
@@ -156,41 +153,47 @@ export class MemStorage implements IStorage {
     return Array.from(this.inspections.values()).find(inspection => inspection.protocol === protocol);
   }
 
-  async getInspections(userId: number, filters?: { status?: string; clientId?: number }): Promise<Inspection[]> {
-    let inspections = Array.from(this.inspections.values()).filter(inspection => inspection.userId === userId);
+  async getInspectionsByUser(userId: number, filters?: { status?: string; limit?: number; offset?: number }): Promise<Inspection[]> {
+    let results = Array.from(this.inspections.values()).filter(inspection => inspection.userId === userId);
     
     if (filters?.status) {
-      inspections = inspections.filter(inspection => inspection.status === filters.status);
+      results = results.filter(inspection => inspection.status === filters.status);
     }
     
-    if (filters?.clientId) {
-      inspections = inspections.filter(inspection => inspection.clientId === filters.clientId);
+    // Sort by date descending
+    results.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    
+    if (filters?.offset) {
+      results = results.slice(filters.offset);
     }
     
-    return inspections.sort((a, b) => new Date(b.createdAt!).getTime() - new Date(a.createdAt!).getTime());
+    if (filters?.limit) {
+      results = results.slice(0, filters.limit);
+    }
+    
+    return results;
   }
 
   async createInspection(insertInspection: InsertInspection): Promise<Inspection> {
     const id = this.currentInspectionId++;
     const now = new Date();
-    const inspection: Inspection = {
-      ...insertInspection,
-      id,
+    const inspection: Inspection = { 
+      ...insertInspection, 
+      id, 
       createdAt: now,
-      updatedAt: now,
-      syncedAt: null,
+      updatedAt: now
     };
     this.inspections.set(id, inspection);
     return inspection;
   }
 
-  async updateInspection(id: number, data: Partial<InsertInspection>): Promise<Inspection | undefined> {
+  async updateInspection(id: number, updateInspection: Partial<InsertInspection>): Promise<Inspection | undefined> {
     const inspection = this.inspections.get(id);
     if (!inspection) return undefined;
     
     const updatedInspection = { 
       ...inspection, 
-      ...data, 
+      ...updateInspection, 
       updatedAt: new Date() 
     };
     this.inspections.set(id, updatedInspection);
@@ -213,11 +216,11 @@ export class MemStorage implements IStorage {
     return tile;
   }
 
-  async updateTile(id: number, data: Partial<InsertTile>): Promise<Tile | undefined> {
+  async updateTile(id: number, updateTile: Partial<InsertTile>): Promise<Tile | undefined> {
     const tile = this.tiles.get(id);
     if (!tile) return undefined;
     
-    const updatedTile = { ...tile, ...data };
+    const updatedTile = { ...tile, ...updateTile };
     this.tiles.set(id, updatedTile);
     return updatedTile;
   }
@@ -238,11 +241,11 @@ export class MemStorage implements IStorage {
     return nonConformity;
   }
 
-  async updateNonConformity(id: number, data: Partial<InsertNonConformity>): Promise<NonConformity | undefined> {
+  async updateNonConformity(id: number, updateNonConformity: Partial<InsertNonConformity>): Promise<NonConformity | undefined> {
     const nonConformity = this.nonConformities.get(id);
     if (!nonConformity) return undefined;
     
-    const updatedNonConformity = { ...nonConformity, ...data };
+    const updatedNonConformity = { ...nonConformity, ...updateNonConformity };
     this.nonConformities.set(id, updatedNonConformity);
     return updatedNonConformity;
   }
@@ -252,8 +255,8 @@ export class MemStorage implements IStorage {
   }
 
   // Reports
-  async getReportByInspection(inspectionId: number): Promise<Report | undefined> {
-    return Array.from(this.reports.values()).find(report => report.inspectionId === inspectionId);
+  async getReportsByInspection(inspectionId: number): Promise<Report[]> {
+    return Array.from(this.reports.values()).filter(report => report.inspectionId === inspectionId);
   }
 
   async createReport(insertReport: InsertReport): Promise<Report> {
@@ -265,19 +268,6 @@ export class MemStorage implements IStorage {
     };
     this.reports.set(id, report);
     return report;
-  }
-
-  // Sync methods
-  async getUnsyncedInspections(): Promise<Inspection[]> {
-    return Array.from(this.inspections.values()).filter(inspection => !inspection.syncedAt);
-  }
-
-  async markInspectionSynced(id: number): Promise<void> {
-    const inspection = this.inspections.get(id);
-    if (inspection) {
-      inspection.syncedAt = new Date();
-      this.inspections.set(id, inspection);
-    }
   }
 }
 

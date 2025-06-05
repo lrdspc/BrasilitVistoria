@@ -1,134 +1,126 @@
-import { useState, useEffect } from 'react';
-import { offlineManager } from '@/lib/offline';
+import { useState, useEffect } from "react";
+import { connectionManager, offlineStorage } from "@/lib/offline";
+import { apiRequest } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 
-export interface SyncStatus {
-  status: 'online' | 'offline' | 'syncing';
-  pendingCount: number;
-  lastSyncAt?: Date;
-  isInitialized: boolean;
-}
-
-export const useOfflineSync = () => {
-  const [syncStatus, setSyncStatus] = useState<SyncStatus>({
-    status: 'offline',
-    pendingCount: 0,
-    isInitialized: false,
-  });
-
-  const [syncProgress, setSyncProgress] = useState<{
-    current: number;
-    total: number;
-    currentItem?: string;
-  }>({ current: 0, total: 0 });
+export function useOfflineSync() {
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [pendingCount, setPendingCount] = useState(0);
+  const { toast } = useToast();
 
   useEffect(() => {
-    let mounted = true;
-
-    const initializeSync = async () => {
-      try {
-        await offlineManager.initialize();
-        if (mounted) {
-          setSyncStatus(prev => ({ ...prev, isInitialized: true }));
-          await updateSyncStatus();
-        }
-      } catch (error) {
-        console.error('Failed to initialize offline manager:', error);
-      }
+    const handleOnline = async () => {
+      await syncPendingData();
     };
 
-    const updateSyncStatus = async () => {
-      if (!mounted) return;
-      
-      try {
-        const [status, pendingCount] = await Promise.all([
-          offlineManager.getConnectionStatus(),
-          offlineManager.getPendingSyncCount(),
-        ]);
-
-        setSyncStatus(prev => ({
-          ...prev,
-          status,
-          pendingCount,
-        }));
-      } catch (error) {
-        console.error('Failed to update sync status:', error);
-      }
-    };
-
-    // Initialize
-    initializeSync();
-
-    // Set up periodic status updates
-    const statusInterval = setInterval(updateSyncStatus, 5000);
-
-    // Listen for connection changes
-    const handleOnline = () => updateSyncStatus();
-    const handleOffline = () => updateSyncStatus();
-
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
+    connectionManager.addListener(handleOnline);
+    updatePendingCount();
 
     return () => {
-      mounted = false;
-      clearInterval(statusInterval);
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
+      connectionManager.removeListener(handleOnline);
     };
   }, []);
 
-  const forcSync = async (): Promise<{ success: number; failed: number }> => {
-    if (syncStatus.status === 'syncing') {
-      return { success: 0, failed: 0 };
-    }
-
+  const updatePendingCount = async () => {
     try {
-      setSyncStatus(prev => ({ ...prev, status: 'syncing' }));
-      
-      const result = await offlineManager.syncPendingInspections();
-      
-      // Update status after sync
-      const [newStatus, pendingCount] = await Promise.all([
-        offlineManager.getConnectionStatus(),
-        offlineManager.getPendingSyncCount(),
-      ]);
-
-      setSyncStatus(prev => ({
-        ...prev,
-        status: newStatus,
-        pendingCount,
-        lastSyncAt: new Date(),
-      }));
-
-      return result;
+      const queue = await offlineStorage.getSyncQueue();
+      setPendingCount(queue.length);
     } catch (error) {
-      console.error('Force sync failed:', error);
-      setSyncStatus(prev => ({ ...prev, status: 'offline' }));
-      return { success: 0, failed: 1 };
+      console.error("Error updating pending count:", error);
     }
   };
 
-  const getStorageInfo = async () => {
+  const syncPendingData = async () => {
+    if (!connectionManager.isOnline || isSyncing) return;
+
+    setIsSyncing(true);
+
     try {
-      return await offlineManager.getStorageInfo();
+      const queue = await offlineStorage.getSyncQueue();
+      
+      if (queue.length === 0) {
+        setIsSyncing(false);
+        return;
+      }
+
+      toast({
+        title: "Sincronizando dados...",
+        description: `${queue.length} itens pendentes`,
+      });
+
+      let syncedCount = 0;
+
+      for (const item of queue) {
+        try {
+          await syncItem(item);
+          syncedCount++;
+        } catch (error) {
+          console.error("Error syncing item:", error);
+          // Continue with other items
+        }
+      }
+
+      await offlineStorage.clearSyncQueue();
+      setPendingCount(0);
+
+      if (syncedCount > 0) {
+        toast({
+          title: "Sincronização concluída",
+          description: `${syncedCount} itens sincronizados`,
+        });
+      }
     } catch (error) {
-      console.error('Failed to get storage info:', error);
-      return { used: 0, quota: 0, inspections: 0 };
+      console.error("Error syncing data:", error);
+      toast({
+        title: "Erro na sincronização",
+        description: "Alguns dados podem não ter sido sincronizados",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSyncing(false);
     }
   };
 
-  const isOnline = syncStatus.status === 'online';
-  const isOffline = syncStatus.status === 'offline';
-  const isSyncing = syncStatus.status === 'syncing';
-  const hasPendingSync = syncStatus.pendingCount > 0;
+  const syncItem = async (item: any) => {
+    const { operation, data } = item;
+
+    switch (operation) {
+      case "create_client":
+        await apiRequest("POST", "/api/clients", data);
+        break;
+      case "create_inspection":
+        await apiRequest("POST", "/api/inspections", data);
+        break;
+      case "update_inspection":
+        await apiRequest("PUT", `/api/inspections/${data.id}`, data);
+        break;
+      case "create_tile":
+        await apiRequest("POST", `/api/inspections/${data.inspectionId}/tiles`, data);
+        break;
+      case "create_non_conformity":
+        await apiRequest("POST", `/api/inspections/${data.inspectionId}/non-conformities`, data);
+        break;
+      default:
+        console.warn("Unknown sync operation:", operation);
+    }
+  };
+
+  const forcSync = async () => {
+    if (connectionManager.isOnline) {
+      await syncPendingData();
+    } else {
+      toast({
+        title: "Sem conexão",
+        description: "Não é possível sincronizar offline",
+        variant: "destructive",
+      });
+    }
+  };
 
   return {
-    syncStatus,
-    syncProgress,
-    isOnline,
-    isOffline,
     isSyncing,
-    hasPendingSync,
+    pendingCount,
+    syncPendingData,
     forcSync,
-    getStorageInfo,
   };
-};
+}

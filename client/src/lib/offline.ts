@@ -1,293 +1,279 @@
-import { offlineStorage, type OfflineInspection, isOnline, generateLocalId } from './storage';
-import { apiRequest } from './queryClient';
+import type { Inspection, Tile, NonConformity, Client } from "@shared/schema";
 
-export class OfflineManager {
-  private syncInProgress = false;
-  private syncQueue: Set<string> = new Set();
+// IndexedDB wrapper for offline storage
+class OfflineStorage {
+  private dbName = "vigitel_offline";
+  private version = 1;
+  private db: IDBDatabase | null = null;
 
-  async initialize(): Promise<void> {
-    await offlineStorage.init();
-    this.setupEventListeners();
-    
-    // Initial sync if online
-    if (isOnline()) {
-      this.schedulePendingSync();
-    }
-  }
+  async init(): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const request = indexedDB.open(this.dbName, this.version);
 
-  private setupEventListeners(): void {
-    // Online/offline events
-    window.addEventListener('online', () => {
-      this.onOnline();
-    });
-
-    window.addEventListener('offline', () => {
-      this.onOffline();
-    });
-
-    // Periodic sync when online
-    setInterval(() => {
-      if (isOnline() && !this.syncInProgress) {
-        this.schedulePendingSync();
-      }
-    }, 30000); // Every 30 seconds
-  }
-
-  private onOnline(): void {
-    console.log('🌐 Connection restored - starting sync');
-    this.schedulePendingSync();
-  }
-
-  private onOffline(): void {
-    console.log('📱 Gone offline - queuing operations');
-  }
-
-  private async schedulePendingSync(): Promise<void> {
-    if (this.syncInProgress) return;
-
-    try {
-      const unsyncedInspections = await offlineStorage.getUnsyncedInspections();
-      if (unsyncedInspections.length > 0) {
-        await this.syncPendingInspections();
-      }
-    } catch (error) {
-      console.error('Failed to schedule sync:', error);
-    }
-  }
-
-  async syncPendingInspections(): Promise<{ success: number; failed: number }> {
-    if (this.syncInProgress || !isOnline()) {
-      return { success: 0, failed: 0 };
-    }
-
-    this.syncInProgress = true;
-    let success = 0;
-    let failed = 0;
-
-    try {
-      const unsyncedInspections = await offlineStorage.getUnsyncedInspections();
-      
-      for (const inspection of unsyncedInspections) {
-        if (this.syncQueue.has(inspection.localId)) continue;
-        
-        this.syncQueue.add(inspection.localId);
-        
-        try {
-          await this.syncSingleInspection(inspection);
-          success++;
-        } catch (error) {
-          console.error(`Failed to sync inspection ${inspection.localId}:`, error);
-          failed++;
-        } finally {
-          this.syncQueue.delete(inspection.localId);
-        }
-      }
-    } catch (error) {
-      console.error('Sync process failed:', error);
-    } finally {
-      this.syncInProgress = false;
-    }
-
-    return { success, failed };
-  }
-
-  private async syncSingleInspection(inspection: OfflineInspection): Promise<void> {
-    try {
-      // 1. Sync client if needed
-      let clientId = inspection.clientId;
-      if (!clientId && inspection.clientId) {
-        // If we have a local client reference, try to sync it first
-        const clients = await offlineStorage.getAllClients();
-        const localClient = clients.find(c => c.localId === inspection.clientId?.toString());
-        if (localClient && !localClient.id) {
-          const syncedClient = await this.syncClient(localClient);
-          clientId = syncedClient.id;
-        }
-      }
-
-      // 2. Create inspection on server
-      const inspectionData = {
-        clientId,
-        userId: inspection.userId,
-        date: inspection.date,
-        development: inspection.development,
-        city: inspection.city,
-        state: inspection.state,
-        address: inspection.address,
-        cep: inspection.cep,
-        protocol: inspection.protocol,
-        subject: inspection.subject,
-        technician: inspection.technician,
-        department: inspection.department,
-        unit: inspection.unit,
-        coordinator: inspection.coordinator,
-        manager: inspection.manager,
-        regional: inspection.regional,
-        status: inspection.status,
-        localId: inspection.localId,
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => {
+        this.db = request.result;
+        resolve();
       };
 
-      const response = await apiRequest('POST', '/api/inspections', inspectionData);
-      const syncedInspection = await response.json();
+      request.onupgradeneeded = (event) => {
+        const db = (event.target as IDBOpenDBRequest).result;
 
-      // 3. Sync tiles
-      for (const tile of inspection.tiles) {
-        await apiRequest('POST', `/api/inspections/${syncedInspection.id}/tiles`, {
-          thickness: tile.thickness,
-          length: tile.length,
-          width: tile.width,
-          quantity: tile.quantity,
-          grossArea: tile.grossArea,
-          correctedArea: tile.correctedArea,
-        });
-      }
-
-      // 4. Sync non-conformities
-      for (const nc of inspection.nonConformities) {
-        // Upload photos first
-        const photoUrls: string[] = [];
-        for (const photoId of nc.photos) {
-          try {
-            const photoBlob = await offlineStorage.getPhoto(photoId);
-            if (photoBlob) {
-              const photoUrl = await this.uploadPhoto(photoBlob, photoId);
-              photoUrls.push(photoUrl);
-            }
-          } catch (error) {
-            console.warn(`Failed to upload photo ${photoId}:`, error);
-          }
+        // Create object stores
+        if (!db.objectStoreNames.contains("inspections")) {
+          const inspectionStore = db.createObjectStore("inspections", { keyPath: "id", autoIncrement: true });
+          inspectionStore.createIndex("protocol", "protocol", { unique: true });
+          inspectionStore.createIndex("status", "status");
         }
 
-        await apiRequest('POST', `/api/inspections/${syncedInspection.id}/non-conformities`, {
-          type: nc.type,
-          title: nc.title,
-          description: nc.description,
-          notes: nc.notes,
-          photos: photoUrls,
-        });
-      }
+        if (!db.objectStoreNames.contains("clients")) {
+          const clientStore = db.createObjectStore("clients", { keyPath: "id", autoIncrement: true });
+          clientStore.createIndex("document", "document", { unique: true });
+        }
 
-      // 5. Mark as synced locally
-      inspection.syncedAt = new Date();
-      inspection.id = syncedInspection.id;
-      await offlineStorage.saveInspection(inspection);
+        if (!db.objectStoreNames.contains("tiles")) {
+          const tileStore = db.createObjectStore("tiles", { keyPath: "id", autoIncrement: true });
+          tileStore.createIndex("inspectionId", "inspectionId");
+        }
 
-      console.log(`✅ Synced inspection: ${inspection.protocol}`);
-    } catch (error) {
-      console.error(`❌ Failed to sync inspection ${inspection.protocol}:`, error);
-      throw error;
-    }
-  }
+        if (!db.objectStoreNames.contains("nonConformities")) {
+          const ncStore = db.createObjectStore("nonConformities", { keyPath: "id", autoIncrement: true });
+          ncStore.createIndex("inspectionId", "inspectionId");
+        }
 
-  private async syncClient(client: any): Promise<any> {
-    const response = await apiRequest('POST', '/api/clients', {
-      name: client.name,
-      cnpjCpf: client.cnpjCpf,
-      contact: client.contact,
-      email: client.email,
+        if (!db.objectStoreNames.contains("syncQueue")) {
+          db.createObjectStore("syncQueue", { keyPath: "id", autoIncrement: true });
+        }
+      };
     });
-    
-    const syncedClient = await response.json();
-    
-    // Update local client with server ID
-    client.id = syncedClient.id;
-    await offlineStorage.saveClient(client);
-    
-    return syncedClient;
   }
 
-  private async uploadPhoto(blob: Blob, photoId: string): Promise<string> {
-    const formData = new FormData();
-    const file = new File([blob], `${photoId}.jpg`, { type: 'image/jpeg' });
-    formData.append('photo', file);
+  async saveInspection(inspection: Partial<Inspection>): Promise<number> {
+    if (!this.db) throw new Error("Database not initialized");
 
-    const response = await fetch('/api/upload/photo', {
-      method: 'POST',
-      body: formData,
-      credentials: 'include',
+    return new Promise((resolve, reject) => {
+      const transaction = this.db!.transaction(["inspections"], "readwrite");
+      const store = transaction.objectStore("inspections");
+      const request = store.add({
+        ...inspection,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        offline: true,
+      });
+
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => resolve(request.result as number);
     });
-
-    if (!response.ok) {
-      throw new Error(`Failed to upload photo: ${response.statusText}`);
-    }
-
-    const result = await response.json();
-    return result.url;
   }
 
-  async saveInspectionOffline(inspection: Partial<OfflineInspection>): Promise<string> {
-    const localId = inspection.localId || generateLocalId();
-    const now = new Date();
+  async updateInspection(id: number, updates: Partial<Inspection>): Promise<void> {
+    if (!this.db) throw new Error("Database not initialized");
 
-    const offlineInspection: OfflineInspection = {
-      localId,
-      userId: inspection.userId || 1,
-      clientId: inspection.clientId,
-      date: inspection.date || now,
-      development: inspection.development || '',
-      city: inspection.city || '',
-      state: inspection.state || '',
-      address: inspection.address || '',
-      cep: inspection.cep || '',
-      protocol: inspection.protocol || '',
-      subject: inspection.subject || '',
-      technician: inspection.technician || '',
-      department: inspection.department || 'Assistência Técnica',
-      unit: inspection.unit || 'PR',
-      coordinator: inspection.coordinator || 'Marlon Weingartner',
-      manager: inspection.manager || 'Elisabete Kudo',
-      regional: inspection.regional || 'Sul',
-      status: inspection.status || 'pending',
-      createdAt: inspection.createdAt || now,
-      updatedAt: now,
-      tiles: inspection.tiles || [],
-      nonConformities: inspection.nonConformities || [],
-      ...inspection,
-    };
+    return new Promise((resolve, reject) => {
+      const transaction = this.db!.transaction(["inspections"], "readwrite");
+      const store = transaction.objectStore("inspections");
+      const getRequest = store.get(id);
 
-    await offlineStorage.saveInspection(offlineInspection);
-    
-    // Schedule sync if online
-    if (isOnline()) {
-      setTimeout(() => this.schedulePendingSync(), 1000);
-    }
+      getRequest.onsuccess = () => {
+        const inspection = getRequest.result;
+        if (!inspection) {
+          reject(new Error("Inspection not found"));
+          return;
+        }
 
-    return localId;
+        const updatedInspection = {
+          ...inspection,
+          ...updates,
+          updatedAt: new Date(),
+        };
+
+        const putRequest = store.put(updatedInspection);
+        putRequest.onerror = () => reject(putRequest.error);
+        putRequest.onsuccess = () => resolve();
+      };
+
+      getRequest.onerror = () => reject(getRequest.error);
+    });
   }
 
-  async getOfflineInspections(): Promise<OfflineInspection[]> {
-    return await offlineStorage.getAllInspections();
+  async getInspections(): Promise<Inspection[]> {
+    if (!this.db) throw new Error("Database not initialized");
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db!.transaction(["inspections"], "readonly");
+      const store = transaction.objectStore("inspections");
+      const request = store.getAll();
+
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => resolve(request.result);
+    });
   }
 
-  async getOfflineInspection(localId: string): Promise<OfflineInspection | undefined> {
-    return await offlineStorage.getInspection(localId);
+  async saveTile(tile: Partial<Tile>): Promise<number> {
+    if (!this.db) throw new Error("Database not initialized");
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db!.transaction(["tiles"], "readwrite");
+      const store = transaction.objectStore("tiles");
+      const request = store.add({ ...tile, offline: true });
+
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => resolve(request.result as number);
+    });
   }
 
-  async deleteOfflineInspection(localId: string): Promise<void> {
-    await offlineStorage.deleteInspection(localId);
+  async getTilesByInspection(inspectionId: number): Promise<Tile[]> {
+    if (!this.db) throw new Error("Database not initialized");
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db!.transaction(["tiles"], "readonly");
+      const store = transaction.objectStore("tiles");
+      const index = store.index("inspectionId");
+      const request = index.getAll(inspectionId);
+
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => resolve(request.result);
+    });
   }
 
-  getConnectionStatus(): 'online' | 'offline' | 'syncing' {
-    if (this.syncInProgress) return 'syncing';
-    return isOnline() ? 'online' : 'offline';
+  async saveNonConformity(nc: Partial<NonConformity>): Promise<number> {
+    if (!this.db) throw new Error("Database not initialized");
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db!.transaction(["nonConformities"], "readwrite");
+      const store = transaction.objectStore("nonConformities");
+      const request = store.add({ ...nc, offline: true });
+
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => resolve(request.result as number);
+    });
   }
 
-  async getPendingSyncCount(): Promise<number> {
-    const unsynced = await offlineStorage.getUnsyncedInspections();
-    return unsynced.length;
+  async getNonConformitiesByInspection(inspectionId: number): Promise<NonConformity[]> {
+    if (!this.db) throw new Error("Database not initialized");
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db!.transaction(["nonConformities"], "readonly");
+      const store = transaction.objectStore("nonConformities");
+      const index = store.index("inspectionId");
+      const request = index.getAll(inspectionId);
+
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => resolve(request.result);
+    });
   }
 
-  async getStorageInfo(): Promise<{ used: number; quota: number; inspections: number }> {
-    const [storage, inspections] = await Promise.all([
-      offlineStorage.getStorageUsage(),
-      offlineStorage.getAllInspections(),
-    ]);
+  async saveClient(client: Partial<Client>): Promise<number> {
+    if (!this.db) throw new Error("Database not initialized");
 
-    return {
-      ...storage,
-      inspections: inspections.length,
-    };
+    return new Promise((resolve, reject) => {
+      const transaction = this.db!.transaction(["clients"], "readwrite");
+      const store = transaction.objectStore("clients");
+      const request = store.add({
+        ...client,
+        createdAt: new Date(),
+        offline: true,
+      });
+
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => resolve(request.result as number);
+    });
+  }
+
+  async getClients(): Promise<Client[]> {
+    if (!this.db) throw new Error("Database not initialized");
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db!.transaction(["clients"], "readonly");
+      const store = transaction.objectStore("clients");
+      const request = store.getAll();
+
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => resolve(request.result);
+    });
+  }
+
+  async addToSyncQueue(operation: string, data: any): Promise<void> {
+    if (!this.db) throw new Error("Database not initialized");
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db!.transaction(["syncQueue"], "readwrite");
+      const store = transaction.objectStore("syncQueue");
+      const request = store.add({
+        operation,
+        data,
+        timestamp: new Date(),
+      });
+
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => resolve();
+    });
+  }
+
+  async getSyncQueue(): Promise<any[]> {
+    if (!this.db) throw new Error("Database not initialized");
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db!.transaction(["syncQueue"], "readonly");
+      const store = transaction.objectStore("syncQueue");
+      const request = store.getAll();
+
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => resolve(request.result);
+    });
+  }
+
+  async clearSyncQueue(): Promise<void> {
+    if (!this.db) throw new Error("Database not initialized");
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db!.transaction(["syncQueue"], "readwrite");
+      const store = transaction.objectStore("syncQueue");
+      const request = store.clear();
+
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => resolve();
+    });
   }
 }
 
-export const offlineManager = new OfflineManager();
+export const offlineStorage = new OfflineStorage();
+
+// Connection status management
+export class ConnectionManager {
+  private listeners: ((status: boolean) => void)[] = [];
+  private _isOnline: boolean = navigator.onLine;
+
+  constructor() {
+    window.addEventListener("online", this.handleOnline);
+    window.addEventListener("offline", this.handleOffline);
+  }
+
+  private handleOnline = () => {
+    this._isOnline = true;
+    this.notifyListeners(true);
+  };
+
+  private handleOffline = () => {
+    this._isOnline = false;
+    this.notifyListeners(false);
+  };
+
+  get isOnline(): boolean {
+    return this._isOnline;
+  }
+
+  addListener(callback: (status: boolean) => void): void {
+    this.listeners.push(callback);
+  }
+
+  removeListener(callback: (status: boolean) => void): void {
+    this.listeners = this.listeners.filter(listener => listener !== callback);
+  }
+
+  private notifyListeners(status: boolean): void {
+    this.listeners.forEach(listener => listener(status));
+  }
+}
+
+export const connectionManager = new ConnectionManager();
