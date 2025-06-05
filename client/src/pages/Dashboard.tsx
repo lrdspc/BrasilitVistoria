@@ -15,7 +15,7 @@ import type { Inspection } from "@shared/schema";
 export default function Dashboard() {
   const [, setLocation] = useLocation();
   const { user, logout } = useAuth();
-  const { forcSync, isSyncing, pendingCount } = useOfflineSync();
+  const { forceSync, isSyncing, pendingCount } = useOfflineSync();
   
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");

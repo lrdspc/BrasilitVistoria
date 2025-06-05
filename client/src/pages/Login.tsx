@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { Eye, EyeOff, Home } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -16,10 +16,11 @@ export default function Login() {
   const { login, loginWithGoogle, isLoggingIn, isAuthenticated } = useAuth();
 
   // Redirect if already authenticated
-  if (isAuthenticated) {
-    setLocation("/dashboard");
-    return null;
-  }
+  useEffect(() => {
+    if (isAuthenticated) {
+      setLocation("/dashboard");
+    }
+  }, [isAuthenticated, setLocation]);
 
   const handleEmailLogin = async (e: React.FormEvent) => {
     e.preventDefault();

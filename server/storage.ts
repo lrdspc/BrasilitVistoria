@@ -86,7 +86,12 @@ export class MemStorage implements IStorage {
   async createUser(insertUser: InsertUser): Promise<User> {
     const id = this.currentUserId++;
     const user: User = { 
-      ...insertUser, 
+      ...insertUser,
+      department: insertUser.department || "",
+      unit: insertUser.unit || "",
+      coordinator: insertUser.coordinator || "",
+      manager: insertUser.manager || "",
+      regional: insertUser.regional || "",
       id, 
       createdAt: new Date() 
     };
@@ -123,7 +128,9 @@ export class MemStorage implements IStorage {
   async createClient(insertClient: InsertClient): Promise<Client> {
     const id = this.currentClientId++;
     const client: Client = { 
-      ...insertClient, 
+      ...insertClient,
+      email: insertClient.email ?? null,
+      contact: insertClient.contact ?? null,
       id, 
       createdAt: new Date() 
     };
@@ -236,7 +243,13 @@ export class MemStorage implements IStorage {
 
   async createNonConformity(insertNonConformity: InsertNonConformity): Promise<NonConformity> {
     const id = this.currentNonConformityId++;
-    const nonConformity: NonConformity = { ...insertNonConformity, id };
+    const nonConformity: NonConformity = { 
+      ...insertNonConformity,
+      description: insertNonConformity.description ?? null,
+      notes: insertNonConformity.notes ?? null,
+      photos: insertNonConformity.photos ? Array.from(insertNonConformity.photos) : null,
+      id 
+    };
     this.nonConformities.set(id, nonConformity);
     return nonConformity;
   }
