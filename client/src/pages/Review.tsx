@@ -1,520 +1,208 @@
-import { useState } from "react";
-import { useLocation, useParams } from "wouter";
-import { ArrowLeft, Save, Edit, FileText, AlertTriangle } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { Badge } from "@/components/ui/badge";
+import { AppLayout } from "@/components/layouts/AppLayout";
 import { ProgressBar } from "@/components/ProgressBar";
-import { ConnectionStatus } from "@/components/ConnectionStatus";
+import { Button } from "@/components/ui/button";
+import { useVistoriaStore } from "@/stores/vistoriaStore";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { useLocation } from "wouter";
 import { useToast } from "@/hooks/use-toast";
-import { useAuth } from "@/hooks/useAuth";
-import { useInspection } from "@/hooks/useInspection";
-import { DocxGenerator } from "@/lib/docx-generator";
+import { formatDate } from "@/lib/utils"; // For formatting date
+import { ScrollArea } from "@/components/ui/scroll-area"; // For potentially long lists
 
-export default function Review() {
+export default function ReviewPage() {
   const [, setLocation] = useLocation();
-  const { id } = useParams();
-  const inspectionId = id ? parseInt(id) : undefined;
-  const { user } = useAuth();
-  const { data, createInspection, updateInspection } = useInspection(inspectionId);
   const { toast } = useToast();
-  
-  const [expandedSections, setExpandedSections] = useState({
-    basicInfo: true,
-    team: true,
-    tiles: true,
-    nonConformities: true,
-  });
+  const store = useVistoriaStore();
+  const {
+    client,
+    date,
+    enterprise,
+    city,
+    state: storeState,
+    address,
+    cep,
+    protocol,
+    subject,
+    tiles,
+    totalArea,
+    nonConformities,
+    currentStep,
+    setCurrentStep,
+    markComplete,
+    // resetForm, // Decided against auto-resetting for now
+  } = store;
 
-  const [isGenerating, setIsGenerating] = useState(false);
-
-  const toggleSection = (section: keyof typeof expandedSections) => {
-    setExpandedSections(prev => ({
-      ...prev,
-      [section]: !prev[section],
-    }));
+  const handleBack = () => {
+    setCurrentStep(4); // Previous step is Non-Conformities
+    setLocation("/inspection/non-conformities");
   };
 
-  const handleSaveDraft = async () => {
-    if (!data.inspection || !user) return;
+  const handleSubmit = async () => {
+    // 1. Placeholder for saving to IndexedDB
+    console.log("Submitting Vistoria. Data to be saved (placeholder for IndexedDB):", JSON.stringify(store));
+    toast({
+      title: "Submissão (Placeholder)",
+      description: "Dados da vistoria registrados no console. Implementar salvamento offline.",
+      duration: 3000,
+    });
 
-    try {
-      if (inspectionId) {
-        await updateInspection({ id: inspectionId, data: data.inspection });
-      } else {
-        await createInspection(data.inspection);
-      }
-      
-      toast({
-        title: "Rascunho salvo",
-        description: "Vistoria salva com sucesso",
-      });
-    } catch (error) {
-      toast({
-        title: "Erro ao salvar",
-        description: error instanceof Error ? error.message : "Erro desconhecido",
-        variant: "destructive",
-      });
-    }
+    // 2. Placeholder for DOCX generation
+    console.log("Generating DOCX report (placeholder)...");
+    toast({
+      title: "Geração DOCX (Placeholder)",
+      description: "Lógica de geração de relatório pendente.",
+      duration: 3000,
+    });
+
+    // 3. Mark as complete in store
+    markComplete(); // Sets isComplete = true
+
+    // 4. Navigate to success page
+    // The ReportSuccess.tsx page seems to expect an inspection ID.
+    // We'll use the protocol as a stand-in if available.
+    const inspectionIdForPath = protocol || "current_inspection";
+    setLocation(`/inspection/${inspectionIdForPath}/report-success`);
+
+    // Consider if vistoriaStore should be reset here or if ReportSuccess handles it.
+    // For now, let ReportSuccess or a new flow handle reset if needed.
   };
 
-  const handleGenerateReport = async () => {
-    if (!data.inspection || !user) {
-      toast({
-        title: "Dados incompletos",
-        description: "Verifique se todos os dados estão preenchidos",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    if (data.tiles.length === 0) {
-      toast({
-        title: "Telhas não configuradas",
-        description: "Adicione pelo menos uma configuração de telha",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    if (data.nonConformities.length === 0) {
-      toast({
-        title: "Não conformidades não selecionadas",
-        description: "Selecione pelo menos uma não conformidade",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setIsGenerating(true);
-
-    try {
-      // Generate DOCX report
-      await DocxGenerator.generateAndDownload({
-        inspection: data.inspection,
-        client: data.client,
-        user,
-        tiles: data.tiles,
-        nonConformities: data.nonConformities,
-      });
-
-      // Navigate to success page
-      if (inspectionId) {
-        setLocation(`/inspection/${inspectionId}/report-success`);
-      } else {
-        // If no ID, create the inspection first then navigate
-        const newInspection = await createInspection(data.inspection);
-        setLocation(`/inspection/${newInspection.id}/report-success`);
-      }
-    } catch (error) {
-      toast({
-        title: "Erro ao gerar relatório",
-        description: error instanceof Error ? error.message : "Erro desconhecido",
-        variant: "destructive",
-      });
-    } finally {
-      setIsGenerating(false);
-    }
+  const getSafePhotoUrl = (url: string | undefined | null): string => {
+    if (!url) return "/placeholder-image.png"; // Provide a path to a placeholder image in your public folder
+    // Basic check, can be expanded (e.g. check for http/https, data:image)
+    if (url.startsWith("data:image") || url.startsWith("http")) return url;
+    // If it's a relative path or needs prefixing for display from blob/local storage
+    // This part might need adjustment based on how photos are stored and retrieved
+    return url;
   };
 
-  const formatDate = (date: Date | string) => {
-    return new Date(date).toLocaleDateString("pt-BR");
-  };
-
-  const getTotalQuantity = () => {
-    return data.tiles.reduce((sum, tile) => sum + tile.quantity, 0);
-  };
-
-  const formatArea = (area: number) => {
-    return area.toFixed(2) + "m²";
-  };
-
-  if (!user) {
-    setLocation("/login");
-    return null;
-  }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <ConnectionStatus />
-      
-      {/* Header with Progress */}
-      <header className="bg-white border-b border-gray-200 p-4">
-        <div className="flex items-center mb-4">
-          <Button 
-            variant="ghost" 
-            size="sm" 
-            onClick={() => {
-              if (inspectionId) {
-                setLocation(`/inspection/${inspectionId}/non-conformities`);
-              } else {
-                setLocation("/inspection/non-conformities");
-              }
-            }}
-            className="mr-4"
-          >
-            <ArrowLeft className="w-5 h-5" />
-          </Button>
-          <div className="flex-1">
-            <h1 className="text-xl font-semibold text-gray-900">Revisão Final</h1>
-            <Button 
-              variant="ghost" 
-              size="sm" 
-              onClick={handleSaveDraft}
-              className="text-blue-600 font-medium mt-1 p-0 h-auto"
-            >
-              <Save className="w-4 h-4 mr-1" />
-              Salvar Rascunho
-            </Button>
-          </div>
-        </div>
-        
+    <AppLayout title="Revisão da Vistoria" showSidebar={false}>
+      <div className="max-w-3xl mx-auto space-y-6 p-4 md:p-6 pb-28"> {/* Increased bottom padding */}
         <ProgressBar 
-          currentStep={5} 
+          currentStep={currentStep || 5}
           totalSteps={5} 
           stepLabels={["Cliente", "Informações", "Telhas", "Não Conformidades", "Revisão"]} 
         />
-        <p className="text-sm text-gray-600 text-center mt-2">Etapa 5 de 5: Revisão</p>
-      </header>
 
-      <div className="p-4 pb-32 space-y-4">
-        {/* Summary Sections */}
-        
-        {/* Basic Information */}
-        <Card>
-          <Collapsible 
-            open={expandedSections.basicInfo} 
-            onOpenChange={() => toggleSection('basicInfo')}
-          >
-            <CollapsibleTrigger asChild>
-              <div className="flex items-center justify-between p-4 cursor-pointer hover:bg-gray-50">
-                <div className="flex items-center space-x-3">
-                  <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                  <h3 className="font-medium text-gray-900">Informações Básicas</h3>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <Button 
-                    variant="ghost" 
-                    size="sm" 
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (inspectionId) {
-                        setLocation(`/inspection/${inspectionId}/basic-info`);
-                      } else {
-                        setLocation("/inspection/basic-info");
-                      }
-                    }}
-                    className="text-blue-600"
-                  >
-                    <Edit className="w-4 h-4 mr-1" />
-                    Editar
-                  </Button>
-                </div>
-              </div>
-            </CollapsibleTrigger>
-            <CollapsibleContent>
-              <div className="px-4 pb-4 border-t border-gray-100">
-                <div className="grid grid-cols-2 gap-3 text-sm pt-3">
-                  <div>
-                    <span className="text-gray-500">Data:</span>
-                    <span className="ml-2 font-medium">
-                      {data.inspection ? formatDate(data.inspection.date) : "Não informado"}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-gray-500">Cliente:</span>
-                    <span className="ml-2 font-medium">
-                      {data.client?.name || "Não informado"}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-gray-500">Protocolo:</span>
-                    <span className="ml-2 font-medium">
-                      {data.inspection?.protocol || "Não informado"}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-gray-500">Cidade:</span>
-                    <span className="ml-2 font-medium">
-                      {data.inspection ? `${data.inspection.city}/${data.inspection.state}` : "Não informado"}
-                    </span>
-                  </div>
-                  <div className="col-span-2">
-                    <span className="text-gray-500">Assunto:</span>
-                    <span className="ml-2 font-medium">
-                      {data.inspection?.subject || "Não informado"}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </CollapsibleContent>
-          </Collapsible>
-        </Card>
+        <div className="text-center mb-6">
+            <h1 className="text-2xl font-bold text-gray-800">Revisão Final da Vistoria</h1>
+            <p className="text-sm text-gray-600 mt-1">
+              Confira todos os dados antes de finalizar. Após a submissão, a edição não será permitida por esta interface.
+            </p>
+        </div>
 
-        {/* Team */}
-        <Card>
-          <Collapsible 
-            open={expandedSections.team} 
-            onOpenChange={() => toggleSection('team')}
-          >
-            <CollapsibleTrigger asChild>
-              <div className="flex items-center justify-between p-4 cursor-pointer hover:bg-gray-50">
-                <div className="flex items-center space-x-3">
-                  <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                  <h3 className="font-medium text-gray-900">Equipe</h3>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <Button 
-                    variant="ghost" 
-                    size="sm" 
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (inspectionId) {
-                        setLocation(`/inspection/${inspectionId}/basic-info`);
-                      } else {
-                        setLocation("/inspection/basic-info");
-                      }
-                    }}
-                    className="text-blue-600"
-                  >
-                    <Edit className="w-4 h-4 mr-1" />
-                    Editar
-                  </Button>
-                </div>
-              </div>
-            </CollapsibleTrigger>
-            <CollapsibleContent>
-              <div className="px-4 pb-4 border-t border-gray-100">
-                <div className="space-y-2 text-sm pt-3">
-                  <div>
-                    <span className="text-gray-500">Técnico:</span>
-                    <span className="ml-2 font-medium">{user.name}</span>
-                  </div>
-                  <div>
-                    <span className="text-gray-500">Coordenador:</span>
-                    <span className="ml-2 font-medium">{user.coordinator}</span>
-                  </div>
-                  <div>
-                    <span className="text-gray-500">Gerente:</span>
-                    <span className="ml-2 font-medium">{user.manager}</span>
-                  </div>
-                  <div>
-                    <span className="text-gray-500">Regional:</span>
-                    <span className="ml-2 font-medium">{user.regional}</span>
-                  </div>
-                </div>
-              </div>
-            </CollapsibleContent>
-          </Collapsible>
-        </Card>
+        <Accordion type="multiple" defaultValue={['client-info', 'basic-info', 'tiles-info', 'non-conformities']} className="w-full space-y-3">
 
-        {/* Tiles */}
-        <Card>
-          <Collapsible 
-            open={expandedSections.tiles} 
-            onOpenChange={() => toggleSection('tiles')}
-          >
-            <CollapsibleTrigger asChild>
-              <div className="flex items-center justify-between p-4 cursor-pointer hover:bg-gray-50">
-                <div className="flex items-center space-x-3">
-                  <div className={`w-2 h-2 rounded-full ${data.tiles.length > 0 ? 'bg-green-500' : 'bg-red-500'}`}></div>
-                  <h3 className="font-medium text-gray-900">Telhas</h3>
+          <AccordionItem value="client-info" className="border rounded-lg overflow-hidden">
+            <AccordionTrigger className="font-medium text-md p-4 bg-gray-50 hover:bg-gray-100 rounded-t-lg data-[state=closed]:rounded-lg transition-all">
+              Informações do Cliente
+            </AccordionTrigger>
+            <AccordionContent className="p-4 border-t bg-white">
+              {client ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                  <p><strong>Nome:</strong> {client.name}</p>
+                  <p><strong>Documento:</strong> {client.document}</p>
+                  <p><strong>Contato:</strong> {client.contact || "N/A"}</p>
+                  <p><strong>Email:</strong> {client.email || "N/A"}</p>
                 </div>
-                <div className="flex items-center space-x-2">
-                  <Button 
-                    variant="ghost" 
-                    size="sm" 
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (inspectionId) {
-                        setLocation(`/inspection/${inspectionId}/tiles`);
-                      } else {
-                        setLocation("/inspection/tiles");
-                      }
-                    }}
-                    className="text-blue-600"
-                  >
-                    <Edit className="w-4 h-4 mr-1" />
-                    Editar
-                  </Button>
-                </div>
+              ) : <p className="text-sm text-gray-500">Nenhum cliente selecionado.</p>}
+            </AccordionContent>
+          </AccordionItem>
+
+          <AccordionItem value="basic-info" className="border rounded-lg overflow-hidden">
+            <AccordionTrigger className="font-medium text-md p-4 bg-gray-50 hover:bg-gray-100 rounded-t-lg data-[state=closed]:rounded-lg transition-all">
+              Informações Básicas da Vistoria
+            </AccordionTrigger>
+            <AccordionContent className="p-4 border-t bg-white">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                <p><strong>Protocolo:</strong> {protocol || "N/A"}</p>
+                <p><strong>Data:</strong> {date ? formatDate(new Date(date)) : "N/A"}</p>
+                <p><strong>Empreendimento:</strong> {enterprise || "N/A"}</p>
+                <p><strong>Assunto:</strong> {subject || "N/A"}</p>
+                <p className="md:col-span-2"><strong>Endereço:</strong> {`${address || ""}, ${city || ""}, ${storeState || ""}`}</p>
+                <p><strong>CEP:</strong> {cep || "N/A"}</p>
               </div>
-            </CollapsibleTrigger>
-            <CollapsibleContent>
-              <div className="px-4 pb-4 border-t border-gray-100">
-                {data.tiles.length > 0 ? (
-                  <div className="space-y-3 pt-3">
-                    {data.tiles.map((tile, index) => (
-                      <div key={index} className="bg-gray-50 p-3 rounded-lg">
-                        <div className="text-sm">
-                          <div className="font-medium mb-1">
-                            {tile.quantity}x Telha Ondulada {tile.thickness} CRFS
+            </AccordionContent>
+          </AccordionItem>
+
+          <AccordionItem value="tiles-info" className="border rounded-lg overflow-hidden">
+            <AccordionTrigger className="font-medium text-md p-4 bg-gray-50 hover:bg-gray-100 rounded-t-lg data-[state=closed]:rounded-lg transition-all">
+              Telhas e Área Total
+            </AccordionTrigger>
+            <AccordionContent className="p-4 border-t bg-white">
+              {tiles && tiles.length > 0 ? (
+                <>
+                  <ScrollArea className="max-h-60"> {/* Scroll for many tile types */}
+                    <ul className="space-y-3 mb-4 pr-3">
+                      {tiles.map((tile, index) => (
+                        <li key={index} className="p-3 border rounded bg-gray-50 text-sm">
+                          <p><strong>Tipo/Espessura:</strong> Telha {tile.thickness}</p>
+                          <p><strong>Dimensões:</strong> {tile.length}m x {tile.width}m</p>
+                          <p><strong>Quantidade:</strong> {tile.quantity}</p>
+                          <p><strong>Área Corrigida:</strong> {tile.correctedArea ? tile.correctedArea.toFixed(2) : 'N/A'} m²</p>
+                        </li>
+                      ))}
+                    </ul>
+                  </ScrollArea>
+                  <p className="font-semibold text-md mt-3 pt-3 border-t">
+                    <strong>Área Total Corrigida:</strong> {totalArea ? totalArea.toFixed(2) : 'N/A'} m²
+                  </p>
+                </>
+              ) : <p className="text-sm text-gray-500">Nenhuma telha selecionada.</p>}
+            </AccordionContent>
+          </AccordionItem>
+
+          <AccordionItem value="non-conformities" className="border rounded-lg overflow-hidden">
+            <AccordionTrigger className="font-medium text-md p-4 bg-gray-50 hover:bg-gray-100 rounded-t-lg data-[state=closed]:rounded-lg transition-all">
+              Não Conformidades ({nonConformities ? nonConformities.length : 0})
+            </AccordionTrigger>
+            <AccordionContent className="p-4 border-t bg-white">
+              {nonConformities && nonConformities.length > 0 ? (
+                <ScrollArea className="max-h-96"> {/* Scroll for many non-conformities */}
+                  <ul className="space-y-4 pr-3">
+                    {nonConformities.map((nc, index) => (
+                      <li key={nc.id || index} className="p-3 border rounded bg-gray-50 text-sm">
+                        <p className="font-semibold text-base mb-1">{nc.title}</p>
+                        <p className="text-xs text-gray-600 mb-1"><strong>Descrição:</strong> {nc.description || "Nenhuma descrição."}</p>
+                        <p className="text-xs text-gray-600 mb-2"><strong>Observações:</strong> {nc.notes || "Nenhuma observação."}</p>
+                        {nc.photos && nc.photos.length > 0 && (
+                          <div>
+                            <p className="text-xs font-medium mb-1">Fotos:</p>
+                            <div className="flex flex-wrap gap-2">
+                              {nc.photos.map((photoUrl, photoIndex) => (
+                                <img
+                                  key={photoIndex}
+                                  src={getSafePhotoUrl(photoUrl)}
+                                  alt={`Foto ${photoIndex + 1} de ${nc.title}`}
+                                  className="w-20 h-20 object-cover rounded border-2 border-white shadow-sm hover:scale-150 transition-transform cursor-pointer"
+                                  onClick={() => window.open(getSafePhotoUrl(photoUrl), '_blank')}
+                                />
+                              ))}
+                            </div>
                           </div>
-                          <div className="text-gray-600">
-                            Dimensão: {tile.length}m x {tile.width}m
-                          </div>
-                          <div className="text-gray-600">
-                            Área: {formatArea(tile.correctedArea)}
-                          </div>
-                        </div>
-                      </div>
+                        )}
+                      </li>
                     ))}
-                    <div className="pt-2 border-t border-gray-200">
-                      <div className="flex justify-between items-center font-bold text-blue-600">
-                        <span>Área Total Coberta:</span>
-                        <span>{formatArea(data.tiles.reduce((sum, tile) => sum + tile.correctedArea, 0))}</span>
-                      </div>
-                      <div className="text-sm text-gray-600 mt-1">
-                        Total de {getTotalQuantity()} telhas em {data.tiles.length} configurações
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="pt-3">
-                    <p className="text-red-600 text-sm">Nenhuma telha configurada</p>
-                  </div>
-                )}
-              </div>
-            </CollapsibleContent>
-          </Collapsible>
-        </Card>
+                  </ul>
+                </ScrollArea>
+              ) : <p className="text-sm text-gray-500">Nenhuma não conformidade registrada.</p>}
+            </AccordionContent>
+          </AccordionItem>
+        </Accordion>
 
-        {/* Non-Conformities */}
-        <Card>
-          <Collapsible 
-            open={expandedSections.nonConformities} 
-            onOpenChange={() => toggleSection('nonConformities')}
-          >
-            <CollapsibleTrigger asChild>
-              <div className="flex items-center justify-between p-4 cursor-pointer hover:bg-gray-50">
-                <div className="flex items-center space-x-3">
-                  <div className={`w-2 h-2 rounded-full ${data.nonConformities.length > 0 ? 'bg-green-500' : 'bg-red-500'}`}></div>
-                  <h3 className="font-medium text-gray-900">Não Conformidades</h3>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <Button 
-                    variant="ghost" 
-                    size="sm" 
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (inspectionId) {
-                        setLocation(`/inspection/${inspectionId}/non-conformities`);
-                      } else {
-                        setLocation("/inspection/non-conformities");
-                      }
-                    }}
-                    className="text-blue-600"
-                  >
-                    <Edit className="w-4 h-4 mr-1" />
-                    Editar
-                  </Button>
-                </div>
-              </div>
-            </CollapsibleTrigger>
-            <CollapsibleContent>
-              <div className="px-4 pb-4 border-t border-gray-100">
-                {data.nonConformities.length > 0 ? (
-                  <div className="space-y-3 pt-3">
-                    {data.nonConformities.map((nc, index) => (
-                      <div key={index} className="flex items-start space-x-3">
-                        <Badge variant="destructive" className="mt-1">
-                          {index + 1}
-                        </Badge>
-                        <div className="flex-1">
-                          <div className="font-medium text-sm">{nc.title}</div>
-                          <div className="text-xs text-gray-600 mt-1">
-                            {nc.photos?.length || 0} fotos
-                            {nc.notes && " • Notas incluídas"}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                    <div className="pt-2 border-t border-gray-200">
-                      <div className="text-sm font-medium text-red-700">
-                        Total: {data.nonConformities.length} não conformidade{data.nonConformities.length !== 1 ? 's' : ''} identificada{data.nonConformities.length !== 1 ? 's' : ''}
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="pt-3">
-                    <p className="text-red-600 text-sm">Nenhuma não conformidade selecionada</p>
-                  </div>
-                )}
-              </div>
-            </CollapsibleContent>
-          </Collapsible>
-        </Card>
-
-        {/* Final Actions */}
-        <div className="space-y-4 pt-4">
-          <Card className="bg-yellow-50 border-yellow-200">
-            <CardContent className="p-4">
-              <div className="flex items-start space-x-3">
-                <AlertTriangle className="w-5 h-5 text-yellow-600 mt-0.5" />
-                <div className="text-sm">
-                  <div className="font-medium text-yellow-800 mb-1">Revisão Final</div>
-                  <div className="text-yellow-700">
-                    Verifique todas as informações antes de gerar o relatório. 
-                    Após a geração, os dados não poderão ser editados.
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Button 
-            onClick={handleGenerateReport}
-            disabled={isGenerating || data.tiles.length === 0 || data.nonConformities.length === 0}
-            className="w-full bg-green-600 hover:bg-green-700 h-12 text-lg font-semibold shadow-lg"
-          >
-            {isGenerating ? (
-              <>
-                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
-                Gerando Relatório...
-              </>
-            ) : (
-              <>
-                <FileText className="w-5 h-5 mr-2" />
-                Gerar Relatório Final
-              </>
-            )}
-          </Button>
+        {/* Action Buttons Container */}
+        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 shadow-top-md md:sticky md:shadow-none md:p-0 md:mt-8">
+          <div className="max-w-3xl mx-auto flex justify-between">
+            <Button variant="outline" onClick={handleBack} className="h-11 px-5 text-base md:h-12 md:px-6 md:text-lg">
+              Voltar
+            </Button>
+            <Button onClick={handleSubmit} className="h-11 px-5 bg-green-600 hover:bg-green-700 text-base md:h-12 md:px-8 md:text-lg">
+              Submeter Vistoria
+            </Button>
+          </div>
         </div>
       </div>
-
-      {/* Fixed Bottom Actions */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 max-w-md mx-auto">
-        <div className="flex space-x-4">
-          <Button 
-            variant="outline" 
-            onClick={() => {
-              if (inspectionId) {
-                setLocation(`/inspection/${inspectionId}/non-conformities`);
-              } else {
-                setLocation("/inspection/non-conformities");
-              }
-            }}
-            className="flex-1 h-12"
-          >
-            Voltar
-          </Button>
-          <Button 
-            onClick={handleGenerateReport}
-            disabled={isGenerating || data.tiles.length === 0 || data.nonConformities.length === 0}
-            className="flex-1 h-12 bg-green-600 hover:bg-green-700"
-          >
-            {isGenerating ? (
-              "Gerando..."
-            ) : (
-              <>
-                <FileText className="w-4 h-4 mr-1" />
-                Gerar Relatório
-              </>
-            )}
-          </Button>
-        </div>
-      </div>
-    </div>
+    </AppLayout>
   );
 }

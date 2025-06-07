@@ -45,9 +45,11 @@ interface VistoriaState extends VistoriaFormData {
   addTile: (tile: Omit<Tile, 'id' | 'inspectionId'>) => void;
   removeTile: (index: number) => void;
   updateTile: (index: number, tile: Partial<Tile>) => void;
+  setTiles: (tiles: Tile[]) => void;
   addNonConformity: (nc: Omit<NonConformity, 'id' | 'inspectionId'>) => void;
   removeNonConformity: (index: number) => void;
   updateNonConformity: (index: number, nc: Partial<NonConformity>) => void;
+  setNonConformities: (nonConformities: NonConformity[]) => void; // Added setNonConformities action
   setCurrentStep: (step: number) => void;
   calculateTotalArea: () => void;
   resetForm: () => void;
@@ -103,6 +105,8 @@ export const useVistoriaStore = create<VistoriaState>()(
         tiles: state.tiles.map((t, i) => i === index ? { ...t, ...tile } : t)
       })),
 
+      setTiles: (tiles) => set({ tiles }), // Implementation for setTiles
+
       addNonConformity: (nc) => set((state) => {
         const newNCs = [...state.nonConformities, { ...nc, id: Date.now(), inspectionId: 0 } as NonConformity];
         return { nonConformities: newNCs };
@@ -115,6 +119,8 @@ export const useVistoriaStore = create<VistoriaState>()(
       updateNonConformity: (index, nc) => set((state) => ({
         nonConformities: state.nonConformities.map((n, i) => i === index ? { ...n, ...nc } : n)
       })),
+
+      setNonConformities: (nonConformities) => set({ nonConformities }), // Implementation for setNonConformities
 
       setCurrentStep: (currentStep) => set({ currentStep }),
 

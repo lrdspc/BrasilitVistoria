@@ -4,7 +4,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useEffect } from "react";
-import { offlineStorage } from "./lib/offline";
+// import { offlineStorage } from "./lib/offline"; // Dexie initializes itself
 
 // Pages
 import Login from "@/pages/Login";
@@ -21,10 +21,10 @@ import NotFound from "@/pages/not-found";
 function Router() {
   const [location] = useLocation();
   
-  // Initialize offline storage
-  useEffect(() => {
-    offlineStorage.init().catch(console.error);
-  }, []);
+  // Initialize offline storage - No longer needed, Dexie initializes itself.
+  // useEffect(() => {
+  //   offlineStorage.init().catch(console.error);
+  // }, []);
 
   // Register service worker for PWA
   useEffect(() => {

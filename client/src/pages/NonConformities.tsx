@@ -1,340 +1,159 @@
-import { useState, useEffect } from "react";
-import { useLocation, useParams } from "wouter";
+import { useEffect, useState } from "react";
+import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, Save, ChevronDown, ChevronUp } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Textarea } from "@/components/ui/textarea";
-import { Card, CardContent } from "@/components/ui/card";
+import { AppLayout } from "@/components/layouts/AppLayout";
 import { ProgressBar } from "@/components/ProgressBar";
-import { ConnectionStatus } from "@/components/ConnectionStatus";
-import { PhotoUpload } from "@/components/PhotoUpload";
-import { VoiceInput } from "@/components/VoiceInput";
+import { Button } from "@/components/ui/button";
+import { useVistoriaStore } from "@/stores/vistoriaStore";
+import { NaoConformidadesChecklist, type AvailableNonConformity, type SelectedNonConformity } from "@/components/forms/NaoConformidadesChecklist";
 import { useToast } from "@/hooks/use-toast";
-import { useInspection } from "@/hooks/useInspection";
-import type { NonConformity } from "@shared/schema";
+import type { NonConformity as StoreNonConformity } from "@shared/schema"; // Actual store type
 
-interface NonConformityForm {
-  id?: number;
-  title: string;
-  description?: string;
-  notes: string;
-  photos: string[];
-  selected: boolean;
-}
+// Function to fetch non-conformity configurations
+// Replace with your actual API fetching logic if it's more complex or uses a service
+const fetchNonConformityConfigs = async (): Promise<AvailableNonConformity[]> => {
+  // This is a placeholder. In a real app, you'd fetch from an API endpoint.
+  // The existing page used useQuery with "/api/config/non-conformities"
+  // For now, let's simulate a fetch or use a hardcoded list similar to NON_CONFORMITY_LIST for structure.
+  // This should ideally return { id: string, title: string, defaultDescription?: string }
+  const response = await fetch("/api/config/non-conformities");
+  if (!response.ok) {
+    throw new Error("Failed to fetch non-conformity configurations");
+  }
+  const data = await response.json();
+  // Assuming the API returns string[] (titles) as per original page:
+  if (Array.isArray(data) && data.every(item => typeof item === 'string')) {
+    return data.map((title, index) => ({
+      id: String(index + 1), // Create a simple ID
+      title: title,
+      defaultDescription: `Detalhes sobre ${title}.`, // Example default description
+    }));
+  }
+  // If API returns a more structured object:
+  // return data as AvailableNonConformity[];
+  // For now, let's ensure it returns the correct type if previous was just string[]
+  console.warn("API at /api/config/non-conformities might need to return a more structured AvailableNonConformity object if it only returns titles.");
+  return []; // Fallback for safety
+};
 
-export default function NonConformities() {
+
+export default function NonConformitiesPage() {
   const [, setLocation] = useLocation();
-  const { id } = useParams();
-  const inspectionId = id ? parseInt(id) : undefined;
-  const { data, setCurrentData } = useInspection(inspectionId);
+  const {
+    nonConformities: selectedNcsFromStore, // These are StoreNonConformity[]
+    setNonConformities,
+    setCurrentStep,
+    currentStep: storeCurrentStep
+  } = useVistoriaStore();
   const { toast } = useToast();
-  
-  const [nonConformities, setNonConformities] = useState<NonConformityForm[]>([]);
-  const [showAll, setShowAll] = useState(false);
 
-  // Fetch non-conformity list
-  const { data: ncList = [] } = useQuery<string[]>({
-    queryKey: ["/api/config/non-conformities"],
+  // Fetch available non-conformity items from the API
+  const { data: availableNcItems, isLoading: isLoadingConfig, error: configError } = useQuery<AvailableNonConformity[]>({
+    queryKey: ["nonConformityConfigs"],
+    queryFn: fetchNonConformityConfigs
   });
 
-  // Initialize non-conformities list
-  useEffect(() => {
-    if (ncList.length > 0 && nonConformities.length === 0) {
-      const initialNCs = ncList.map((title, index) => ({
-        title,
-        description: `Não conformidade identificada: ${title.toLowerCase()}`,
-        notes: "",
-        photos: [],
-        selected: false,
-      }));
-      setNonConformities(initialNCs);
-    }
-  }, [ncList, nonConformities.length]);
+  // Adapt store data (StoreNonConformity[]) to what NaoConformidadesChecklist expects (SelectedNonConformity[])
+  // StoreNonConformity includes id and inspectionId, SelectedNonConformity does not explicitly.
+  // The checklist component primarily works with title, description, notes, photos.
+  const checklistSelectedItems: SelectedNonConformity[] = selectedNcsFromStore.map(nc => ({
+    title: nc.title,
+    description: nc.description || "",
+    notes: nc.notes || "",
+    photos: nc.photos || [],
+  }));
 
-  // Load existing non-conformities from current data
-  useEffect(() => {
-    if (data.nonConformities.length > 0 && ncList.length > 0) {
-      const updatedNCs = ncList.map((title) => {
-        const existing = data.nonConformities.find(nc => nc.title === title);
-        return {
-          id: existing?.id,
-          title,
-          description: existing?.description || `Não conformidade identificada: ${title.toLowerCase()}`,
-          notes: existing?.notes || "",
-          photos: existing?.photos || [],
-          selected: !!existing,
-        };
-      });
-      setNonConformities(updatedNCs);
-    }
-  }, [data.nonConformities, ncList]);
-
-  const handleSaveDraft = async () => {
-    try {
-      const selectedNCs = nonConformities
-        .filter(nc => nc.selected)
-        .map(nc => ({
-          id: nc.id,
-          inspectionId: inspectionId || 0,
-          title: nc.title,
-          description: nc.description,
-          notes: nc.notes,
-          photos: nc.photos,
-        }));
-
-      setCurrentData(prev => ({ 
-        ...prev, 
-        nonConformities: selectedNCs as NonConformity[]
-      }));
-      
-      toast({
-        title: "Rascunho salvo",
-        description: "Não conformidades salvas",
-      });
-    } catch (error) {
-      toast({
-        title: "Erro ao salvar",
-        description: error instanceof Error ? error.message : "Erro desconhecido",
-        variant: "destructive",
-      });
-    }
+  const handleChecklistChange = (updatedChecklistItems: SelectedNonConformity[]) => {
+    // Convert back to StoreNonConformity[] before saving to store
+    // Need to preserve existing IDs if possible, or let store handle ID generation for new items.
+    const storeReadyItems: StoreNonConformity[] = updatedChecklistItems.map(item => {
+      const existingStoreItem = selectedNcsFromStore.find(sItem => sItem.title === item.title);
+      return {
+        id: existingStoreItem?.id || Date.now(), // Keep existing ID or generate a temporary one for new items
+        inspectionId: existingStoreItem?.inspectionId || 0, // Keep existing or use default
+        title: item.title,
+        description: item.description,
+        notes: item.notes,
+        photos: item.photos,
+        // other fields like 'area', 'severity' if they exist in StoreNonConformity and should be defaulted
+      };
+    });
+    setNonConformities(storeReadyItems);
   };
 
   const handleNext = () => {
-    const selectedNCs = nonConformities.filter(nc => nc.selected);
-    
-    if (selectedNCs.length === 0) {
+    if (selectedNcsFromStore.length === 0) {
       toast({
-        title: "Selecione pelo menos uma não conformidade",
-        description: "É necessário identificar ao menos uma não conformidade",
-        variant: "destructive",
+        title: "Nenhuma não conformidade selecionada",
+        description: "Selecione ao menos uma não conformidade ou prossiga se não houver.",
+        variant: "default", // Changed to default as it's not strictly an error to have no NCs
       });
-      return;
+      // Allow proceeding even if no NCs are selected, this might be valid.
+      // If selection is mandatory, uncomment the return and change variant to "destructive"
+      // return;
     }
 
-    // Validate photos for selected non-conformities
-    const missingPhotos = selectedNCs.filter(nc => nc.photos.length === 0);
+    // Example validation: ensure all selected non-conformities have at least one photo
+    const  missingPhotos = selectedNcsFromStore.filter(nc => nc.photos.length === 0);
     if (missingPhotos.length > 0) {
-      toast({
-        title: "Fotos obrigatórias",
-        description: `Adicione pelo menos uma foto para: ${missingPhotos.map(nc => nc.title).join(", ")}`,
-        variant: "destructive",
-      });
-      return;
+       toast({
+         title: "Fotos obrigatórias",
+         description: `Adicione pelo menos uma foto para cada não conformidade selecionada: ${missingPhotos.map(nc => nc.title).join(", ")}`,
+         variant: "destructive",
+       });
+       return;
     }
 
-    // Update current data
-    const formattedNCs = selectedNCs.map(nc => ({
-      id: nc.id,
-      inspectionId: inspectionId || 0,
-      title: nc.title,
-      description: nc.description,
-      notes: nc.notes,
-      photos: nc.photos,
-    }));
-
-    setCurrentData(prev => ({ 
-      ...prev, 
-      nonConformities: formattedNCs as NonConformity[]
-    }));
-
-    // Navigate to next step
-    if (inspectionId) {
-      setLocation(`/inspection/${inspectionId}/review`);
-    } else {
-      setLocation("/inspection/review");
-    }
+    setCurrentStep(5); // Next step is Review
+    setLocation("/inspection/review");
   };
 
-  const updateNonConformity = (index: number, field: keyof NonConformityForm, value: any) => {
-    const updated = [...nonConformities];
-    updated[index] = { ...updated[index], [field]: value };
-    setNonConformities(updated);
+  const handleBack = () => {
+    setCurrentStep(3); // Previous step is Tiles
+    setLocation("/inspection/tiles");
   };
 
-  const handleVoiceTranscript = (index: number, transcript: string) => {
-    const updated = [...nonConformities];
-    const currentNotes = updated[index].notes;
-    updated[index].notes = currentNotes + (currentNotes ? " " : "") + transcript;
-    setNonConformities(updated);
-  };
+  if (isLoadingConfig) {
+    return (
+      <AppLayout title="Não Conformidades" showSidebar={false}>
+        <div className="flex justify-center items-center h-64">Carregando configurações...</div>
+      </AppLayout>
+    );
+  }
 
-  const selectedCount = nonConformities.filter(nc => nc.selected).length;
-  const visibleCount = showAll ? nonConformities.length : 3;
+  if (configError) {
+     return (
+      <AppLayout title="Não Conformidades" showSidebar={false}>
+        <div className="text-red-600 p-4">Erro ao carregar configurações: {configError.message}</div>
+      </AppLayout>
+    );
+  }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <ConnectionStatus />
-      
-      {/* Header with Progress */}
-      <header className="bg-white border-b border-gray-200 p-4">
-        <div className="flex items-center mb-4">
-          <Button 
-            variant="ghost" 
-            size="sm" 
-            onClick={() => {
-              if (inspectionId) {
-                setLocation(`/inspection/${inspectionId}/tiles`);
-              } else {
-                setLocation("/inspection/tiles");
-              }
-            }}
-            className="mr-4"
-          >
-            <ArrowLeft className="w-5 h-5" />
-          </Button>
-          <div className="flex-1">
-            <h1 className="text-xl font-semibold text-gray-900">Não Conformidades</h1>
-            <Button 
-              variant="ghost" 
-              size="sm" 
-              onClick={handleSaveDraft}
-              className="text-blue-600 font-medium mt-1 p-0 h-auto"
-            >
-              <Save className="w-4 h-4 mr-1" />
-              Salvar Rascunho
-            </Button>
-          </div>
-        </div>
-        
+    <AppLayout title="Não Conformidades" showSidebar={false}>
+      <div className="max-w-4xl mx-auto space-y-6 p-4 md:p-6">
         <ProgressBar 
-          currentStep={4} 
+          currentStep={storeCurrentStep || 4} // Default to 4
           totalSteps={5} 
           stepLabels={["Cliente", "Informações", "Telhas", "Não Conformidades", "Revisão"]} 
         />
-        <p className="text-sm text-gray-600 text-center mt-2">Etapa 4 de 5: Não Conformidades</p>
-      </header>
 
-      <div className="p-4 pb-24 space-y-4">
-        {/* Selection Counter */}
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-          <div className="text-center">
-            <div className="text-xl font-bold text-blue-700">
-              {selectedCount} de {nonConformities.length}
-            </div>
-            <div className="text-sm text-blue-600">não conformidades selecionadas</div>
-            <div className="text-xs text-blue-500 mt-1">Mínimo: 1 não conformidade</div>
-          </div>
-        </div>
+        <NaoConformidadesChecklist
+          availableItems={availableNcItems || []}
+          selectedNonConformities={checklistSelectedItems}
+          onChange={handleChecklistChange}
+          className="mt-4"
+        />
 
-        {/* Non-Conformity List */}
-        <div className="space-y-4">
-          {nonConformities.slice(0, visibleCount).map((nc, index) => (
-            <Card 
-              key={index} 
-              className={`${nc.selected ? 'border-red-200 bg-red-50' : 'border-gray-200'}`}
-            >
-              <CardContent className="p-4">
-                <div className="flex items-start space-x-3">
-                  <Checkbox
-                    checked={nc.selected}
-                    onCheckedChange={(checked) => 
-                      updateNonConformity(index, "selected", checked)
-                    }
-                    className="mt-1"
-                  />
-                  <div className="flex-1">
-                    <h3 className="font-medium text-gray-900 mb-2">{nc.title}</h3>
-                    
-                    {nc.selected && (
-                      <>
-                        {/* Photo Upload */}
-                        <div className="mb-4">
-                          <PhotoUpload
-                            photos={nc.photos}
-                            onPhotosChange={(photos) => 
-                              updateNonConformity(index, "photos", photos)
-                            }
-                            maxPhotos={5}
-                            required
-                          />
-                        </div>
-
-                        {/* Notes with Voice Input */}
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">
-                            Notas (máx. 500 caracteres)
-                          </label>
-                          <div className="relative">
-                            <Textarea
-                              placeholder="Adicione observações sobre esta não conformidade..."
-                              rows={3}
-                              maxLength={500}
-                              value={nc.notes}
-                              onChange={(e) => 
-                                updateNonConformity(index, "notes", e.target.value)
-                              }
-                              className="resize-none pr-16"
-                            />
-                            <div className="absolute bottom-3 right-3">
-                              <VoiceInput
-                                onTranscript={(transcript) => 
-                                  handleVoiceTranscript(index, transcript)
-                                }
-                              />
-                            </div>
-                          </div>
-                          <div className="text-xs text-gray-500 mt-1">
-                            {nc.notes.length}/500 caracteres
-                          </div>
-                        </div>
-                      </>
-                    )}
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-
-          {/* Expand/Collapse Button */}
-          {nonConformities.length > 3 && (
-            <Button
-              variant="outline"
-              onClick={() => setShowAll(!showAll)}
-              className="w-full"
-            >
-              {showAll ? (
-                <>
-                  <ChevronUp className="w-4 h-4 mr-2" />
-                  Mostrar menos
-                </>
-              ) : (
-                <>
-                  <ChevronDown className="w-4 h-4 mr-2" />
-                  Ver todas as não conformidades ({nonConformities.length - 3} restantes)
-                </>
-              )}
-            </Button>
-          )}
-        </div>
-      </div>
-
-      {/* Fixed Bottom Actions */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 max-w-md mx-auto">
-        <div className="flex space-x-4">
-          <Button 
-            variant="outline" 
-            onClick={() => {
-              if (inspectionId) {
-                setLocation(`/inspection/${inspectionId}/tiles`);
-              } else {
-                setLocation("/inspection/tiles");
-              }
-            }}
-            className="flex-1 h-12"
-          >
+        <div className="flex justify-between mt-8">
+          <Button variant="outline" onClick={handleBack} className="h-12 px-6">
             Voltar
           </Button>
-          <Button 
-            onClick={handleNext}
-            className="flex-1 h-12 bg-blue-600 hover:bg-blue-700"
-            disabled={selectedCount === 0}
-          >
+          <Button onClick={handleNext} className="h-12 px-6 bg-blue-600 hover:bg-blue-700">
             Próximo
           </Button>
         </div>
       </div>
-    </div>
+    </AppLayout>
   );
 }

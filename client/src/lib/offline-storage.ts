@@ -1,163 +1,148 @@
-import { InspectionFormData } from '@/types/inspection';
+import { db, OfflineInspection, OfflineClient, OfflinePhoto } from './database';
+import type { InspectionFormData, Photo } from '@/types/inspection'; // Assuming Photo type is used for photo handling
 
-const DB_NAME = 'VigitelDB';
-const DB_VERSION = 1;
-const INSPECTIONS_STORE = 'inspections';
-const PHOTOS_STORE = 'photos';
+// Helper to map data from VigitelDB.OfflineInspection to InspectionFormData for the app if needed
+// For now, we assume InspectionFormData is stored directly in OfflineInspection.data
+// const mapDbInspectionToApp = (dbInspection: OfflineInspection): InspectionFormData => {
+//   return dbInspection.data as InspectionFormData; // Adjust if structure differs
+// };
 
-class OfflineStorage {
-  private db: IDBDatabase | null = null;
+// Helper to map data from VigitelDB.OfflineClient to a Client type used in app if needed
+// const mapDbClientToApp = (dbClient: OfflineClient): AppClientType => {
+//   return dbClient as AppClientType; // Adjust if structure differs
+// };
 
-  async init(): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const request = indexedDB.open(DB_NAME, DB_VERSION);
+class OfflineStorageService {
+  // No more init() needed as VigitelDB is initialized on import
 
-      request.onerror = () => reject(request.error);
-      request.onsuccess = () => {
-        this.db = request.result;
-        resolve();
-      };
-
-      request.onupgradeneeded = (event) => {
-        const db = (event.target as IDBOpenDBRequest).result;
-        
-        // Create inspections store
-        if (!db.objectStoreNames.contains(INSPECTIONS_STORE)) {
-          const inspectionsStore = db.createObjectStore(INSPECTIONS_STORE, { keyPath: 'offlineId' });
-          inspectionsStore.createIndex('status', 'status', { unique: false });
-          inspectionsStore.createIndex('protocol', 'protocol', { unique: true });
-        }
-
-        // Create photos store
-        if (!db.objectStoreNames.contains(PHOTOS_STORE)) {
-          const photosStore = db.createObjectStore(PHOTOS_STORE, { keyPath: 'id', autoIncrement: true });
-          photosStore.createIndex('inspectionId', 'inspectionId', { unique: false });
-        }
-      };
-    });
+  async saveInspection(inspectionData: InspectionFormData, clientId?: number): Promise<number> {
+    // The `inspectionData` is expected to be the full object as defined by `vistoriaStore` or app's forms.
+    // `db.saveInspectionOffline` stores this in the `data` field of `OfflineInspection`
+    // and adds it to the sync queue.
+    // The `offlineId` used previously is now the auto-incremented `id` from `OfflineInspection` table.
+    const newInspectionLocalId = await db.saveInspectionOffline(inspectionData, clientId);
+    return newInspectionLocalId;
   }
 
-  async saveInspection(inspection: InspectionFormData): Promise<void> {
-    if (!this.db) await this.init();
-    
-    const transaction = this.db!.transaction([INSPECTIONS_STORE], 'readwrite');
-    const store = transaction.objectStore(INSPECTIONS_STORE);
-    
-    // Generate offline ID if not exists
-    if (!inspection.offlineId) {
-      inspection.offlineId = `offline_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  async getInspection(id: number): Promise<InspectionFormData | null> {
+    const dbInspection = await db.inspections.get(id);
+    if (dbInspection && dbInspection.data) {
+      // Assuming dbInspection.data is of type InspectionFormData
+      // Add the local DB id to the returned data, similar to old offlineId
+      return { ...dbInspection.data, offlineId: dbInspection.id } as InspectionFormData;
     }
-    
-    await store.put(inspection);
-  }
-
-  async getInspection(offlineId: string): Promise<InspectionFormData | null> {
-    if (!this.db) await this.init();
-    
-    const transaction = this.db!.transaction([INSPECTIONS_STORE], 'readonly');
-    const store = transaction.objectStore(INSPECTIONS_STORE);
-    
-    return new Promise((resolve, reject) => {
-      const request = store.get(offlineId);
-      request.onsuccess = () => resolve(request.result || null);
-      request.onerror = () => reject(request.error);
-    });
+    return null;
   }
 
   async getAllInspections(): Promise<InspectionFormData[]> {
-    if (!this.db) await this.init();
-    
-    const transaction = this.db!.transaction([INSPECTIONS_STORE], 'readonly');
-    const store = transaction.objectStore(INSPECTIONS_STORE);
-    
-    return new Promise((resolve, reject) => {
-      const request = store.getAll();
-      request.onsuccess = () => resolve(request.result || []);
-      request.onerror = () => reject(request.error);
-    });
+    const dbInspections = await db.inspections.toArray();
+    return dbInspections.map(dbInspection => ({
+      ...dbInspection.data,
+      offlineId: dbInspection.id, // Add local DB id
+    } as InspectionFormData));
   }
 
-  async getPendingSyncInspections(): Promise<InspectionFormData[]> {
-    if (!this.db) await this.init();
-    
-    const transaction = this.db!.transaction([INSPECTIONS_STORE], 'readonly');
-    const store = transaction.objectStore(INSPECTIONS_STORE);
-    const index = store.index('status');
-    
-    return new Promise((resolve, reject) => {
-      const request = index.getAll(IDBKeyRange.only('completed'));
-      request.onsuccess = () => {
-        const completedInspections = request.result.filter(inspection => 
-          inspection.offlineId && inspection.offlineId.startsWith('offline_')
-        );
-        resolve(completedInspections);
-      };
-      request.onerror = () => reject(request.error);
-    });
+  async updateInspection(id: number, updates: Partial<InspectionFormData>): Promise<void> {
+    const inspection = await db.inspections.get(id);
+    if (!inspection) {
+      throw new Error(`Inspection with local ID ${id} not found for update.`);
+    }
+    const updatedData = { ...inspection.data, ...updates };
+    await db.inspections.update(id, { data: updatedData, synced: false, lastModified: Date.now() });
+    // Add to sync queue if it's an update for an existing, possibly synced item
+    // Or if it's an update to an item not yet created on server.
+    // The type of sync item might be 'update_inspection' or 'create_inspection' if not yet synced.
+    const syncItem = await db.syncQueue.where({ localId: id, type: 'create_inspection' }).first();
+    if (syncItem) {
+      // If it's still pending creation, update its data
+      await db.updateSyncQueueItem(syncItem.id!, { data: updatedData });
+    } else {
+      // If it was already created or no create task exists, queue an update
+      await db.addToSyncQueue('update_inspection', { ...updatedData, localId: id }, id);
+    }
   }
 
-  async deleteInspection(offlineId: string): Promise<void> {
-    if (!this.db) await this.init();
-    
-    const transaction = this.db!.transaction([INSPECTIONS_STORE], 'readwrite');
-    const store = transaction.objectStore(INSPECTIONS_STORE);
-    
-    await store.delete(offlineId);
+  async deleteInspection(id: number): Promise<void> {
+    // Also need to handle queued sync items for this inspection
+    await db.syncQueue.where({ localId: id }).delete();
+    await db.photos.where({ inspectionId: id }).delete(); // Delete associated photos
+    await db.inspections.delete(id);
   }
 
-  async savePhoto(blob: Blob, inspectionId: string): Promise<string> {
-    if (!this.db) await this.init();
-    
-    const transaction = this.db!.transaction([PHOTOS_STORE], 'readwrite');
-    const store = transaction.objectStore(PHOTOS_STORE);
-    
-    const photoData = {
-      blob,
-      inspectionId,
-      timestamp: Date.now()
+  // Client methods
+  async saveClient(clientData: Omit<OfflineClient, 'id' | 'timestamp' | 'synced'>): Promise<number> {
+    // `saveClientOffline` in VigitelDB handles adding to syncQueue
+    return db.saveClientOffline(clientData);
+  }
+
+  async getClient(id: number): Promise<OfflineClient | null> {
+    const client = await db.clients.get(id);
+    return client || null;
+  }
+
+  async getClientByDocument(document: string): Promise<OfflineClient | null> {
+    const client = await db.clients.where('document').equals(document).first();
+    return client || null;
+  }
+
+  async getAllClients(): Promise<OfflineClient[]> {
+    return db.clients.toArray();
+  }
+
+  async updateClient(id: number, updates: Partial<Omit<OfflineClient, 'id' | 'document'>>): Promise<void> {
+    await db.clients.update(id, { ...updates, synced: false }); // Mark as not synced
+    // Add to sync queue
+    const clientData = await db.clients.get(id);
+    if(clientData){
+      await db.addToSyncQueue('update_client', { ...clientData, ...updates, localId: id }, id);
+    }
+  }
+
+  // Photo methods
+  async savePhoto(inspectionLocalId: number, nonConformityTitle: string, photoDataUrl: string): Promise<number> {
+    const photoToSave: OfflinePhoto = {
+      inspectionId: inspectionLocalId,
+      nonConformityId: nonConformityTitle, // Using title as an identifier for NC within inspection
+      photoDataUrl: photoDataUrl,
+      timestamp: Date.now(),
+      synced: false,
     };
-    
-    return new Promise((resolve, reject) => {
-      const request = store.add(photoData);
-      request.onsuccess = () => resolve(`photo_${request.result}`);
-      request.onerror = () => reject(request.error);
-    });
+    const photoLocalId = await db.photos.add(photoToSave);
+    // Optionally add to sync queue if photos are synced individually
+    // await db.addToSyncQueue('upload_photo', { localPhotoId: photoLocalId, inspectionLocalId, photoDataUrl }, photoLocalId);
+    return photoLocalId;
   }
 
-  async getPhoto(photoId: string): Promise<Blob | null> {
-    if (!this.db) await this.init();
-    
-    const transaction = this.db!.transaction([PHOTOS_STORE], 'readonly');
-    const store = transaction.objectStore(PHOTOS_STORE);
-    
-    return new Promise((resolve, reject) => {
-      const id = parseInt(photoId.replace('photo_', ''));
-      const request = store.get(id);
-      request.onsuccess = () => resolve(request.result?.blob || null);
-      request.onerror = () => reject(request.error);
-    });
+  async getPhotosForNonConformity(inspectionLocalId: number, nonConformityTitle: string): Promise<OfflinePhoto[]> {
+    return db.photos
+      .where({ inspectionId: inspectionLocalId, nonConformityId: nonConformityTitle })
+      .toArray();
   }
 
+  async getPhotosForInspection(inspectionLocalId: number): Promise<OfflinePhoto[]> {
+    return db.photos.where({ inspectionId: inspectionLocalId }).toArray();
+  }
+
+  async deletePhoto(photoLocalId: number): Promise<void> {
+    // Also handle sync queue if individual photos are synced
+    // await db.syncQueue.where({ localId: photoLocalId, type: 'upload_photo' }).delete();
+    await db.photos.delete(photoLocalId);
+  }
+
+
+  // This method might be complex if it means clearing only data that *has* been synced.
+  // VigitelDB's markAsSynced removes items from syncQueue.
+  // True "clearing" of already synced items from local DB might be a separate maintenance task.
   async clearSyncedData(): Promise<void> {
-    if (!this.db) await this.init();
-    
-    const transaction = this.db!.transaction([INSPECTIONS_STORE, PHOTOS_STORE], 'readwrite');
-    
-    // Clear synced inspections
-    const inspectionsStore = transaction.objectStore(INSPECTIONS_STORE);
-    const inspectionRequest = inspectionsStore.openCursor();
-    
-    inspectionRequest.onsuccess = (event) => {
-      const cursor = (event.target as IDBRequest).result;
-      if (cursor) {
-        const inspection = cursor.value;
-        if (inspection.status === 'completed' && !inspection.offlineId?.startsWith('offline_')) {
-          cursor.delete();
-        }
-        cursor.continue();
-      }
-    };
+    // Example: Remove inspections and clients that are marked as synced and older than X days
+    // This is more of a cleanup task and depends on specific requirements.
+    // For now, this method might not be directly used by the sync process itself.
+    console.log("clearSyncedData called - specific implementation depends on requirements for data retention of synced items.");
+    // const oneWeekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    // await db.inspections.where('synced').equals(true).and(i => i.timestamp < oneWeekAgo).delete();
+    // await db.clients.where('synced').equals(true).and(c => c.timestamp < oneWeekAgo).delete();
+    // await db.photos.where('synced').equals(true).and(p => p.timestamp < oneWeekAgo).delete();
   }
 }
 
-export const offlineStorage = new OfflineStorage();
+export const offlineStorageService = new OfflineStorageService();

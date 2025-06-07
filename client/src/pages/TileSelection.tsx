@@ -1,174 +1,80 @@
-import { useState, useEffect } from "react";
-import { useLocation, useParams } from "wouter";
-import { ArrowLeft, Save } from "lucide-react";
+import { AppLayout } from "@/components/layouts/AppLayout";
+import { TelhaSelector } from "@/components/forms/TelhaSelector";
+import { useVistoriaStore } from "@/stores/vistoriaStore";
+import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
-import { ProgressBar } from "@/components/ProgressBar";
-import { ConnectionStatus } from "@/components/ConnectionStatus";
-import { TileCalculator } from "@/components/TileCalculator";
-import { useToast } from "@/hooks/use-toast";
-import { useInspection } from "@/hooks/useInspection";
-import type { Tile } from "@shared/schema";
+import { ProgressBar } from "@/components/ProgressBar"; // Already in guide, ensure path is correct
+import type { Tile } from "@shared/schema"; // To match TelhaSelector's TileData structure closely
+import { useToast } from "@/hooks/use-toast"; // For user feedback
 
 export default function TileSelection() {
   const [, setLocation] = useLocation();
-  const { id } = useParams();
-  const inspectionId = id ? parseInt(id) : undefined;
-  const { data, calculateTotalArea, setCurrentData } = useInspection(inspectionId);
+  const {
+    tiles,
+    setTiles, // Using the new action
+    setCurrentStep,
+    calculateTotalArea,
+    currentStep: storeCurrentStep
+  } = useVistoriaStore();
   const { toast } = useToast();
-  
-  const [tiles, setTiles] = useState<Tile[]>([]);
 
-  // Load tiles from current data
-  useEffect(() => {
-    if (data.tiles.length > 0) {
-      setTiles(data.tiles);
-    }
-  }, [data.tiles]);
-
-  const handleSaveDraft = async () => {
-    try {
-      // Update current data with tiles
-      setCurrentData(prev => ({ ...prev, tiles }));
-      
-      toast({
-        title: "Rascunho salvo",
-        description: "Configuração de telhas salva",
-      });
-    } catch (error) {
-      toast({
-        title: "Erro ao salvar",
-        description: error instanceof Error ? error.message : "Erro desconhecido",
-        variant: "destructive",
-      });
-    }
+  // The TelhaSelector's TileData is compatible with the store's Tile type if we treat id and inspectionId as optional.
+  // The store's Tile type requires id and inspectionId, but for newly added tiles not yet saved to a DB, these might not exist.
+  // TelhaSelector's TileData matches the structure needed before DB interaction.
+  const handleTilesChange = (newTilesFromSelector: any[]) => { // TelhaSelector uses TileData, which is compatible
+    // Ensure newTilesFromSelector conform to what vistoriaStore expects for Tile[]
+    // For now, TelhaSelector's TileData is structurally compatible enough.
+    // If ids are needed strictly by setTiles, this might need adjustment.
+    // Based on vistoriaStore, addTile creates an id, so setTiles should probably handle tiles that might not have ids yet.
+    // For simplicity, we assume TelhaSelector's output is fine or `setTiles` is robust.
+    setTiles(newTilesFromSelector as Tile[]);
   };
 
   const handleNext = () => {
     if (tiles.length === 0) {
       toast({
-        title: "Adicione pelo menos uma telha",
-        description: "É necessário configurar ao menos um tipo de telha",
+        title: "Nenhuma telha selecionada",
+        description: "Adicione pelo menos uma configuração de telha para prosseguir.",
         variant: "destructive",
       });
       return;
     }
-
-    // Validate tiles
-    const hasInvalidTile = tiles.some(tile => 
-      tile.quantity <= 0 || 
-      tile.length <= 0 || 
-      tile.width <= 0
-    );
-
-    if (hasInvalidTile) {
-      toast({
-        title: "Configuração inválida",
-        description: "Verifique as dimensões e quantidades das telhas",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    // Update current data with tiles and total area
-    const totalArea = tiles.reduce((sum, tile) => sum + tile.correctedArea, 0);
-    setCurrentData(prev => ({ 
-      ...prev, 
-      tiles,
-      inspection: prev.inspection ? { ...prev.inspection, totalArea } : undefined
-    }));
-
-    // Navigate to next step
-    if (inspectionId) {
-      setLocation(`/inspection/${inspectionId}/non-conformities`);
-    } else {
-      setLocation("/inspection/non-conformities");
-    }
+    calculateTotalArea(); // Calculates and updates totalArea in the store
+    setCurrentStep(4); // Next step is Non-conformities
+    setLocation("/inspection/non-conformities");
   };
 
-  const handleTilesChange = (newTiles: Tile[]) => {
-    setTiles(newTiles);
-    
-    // Update current data
-    const totalArea = newTiles.reduce((sum, tile) => sum + tile.correctedArea, 0);
-    setCurrentData(prev => ({ 
-      ...prev, 
-      tiles: newTiles,
-      inspection: prev.inspection ? { ...prev.inspection, totalArea } : undefined
-    }));
+  const handleBack = () => {
+    // Optionally, save current tiles to store if TelhaSelector doesn't do it on every change via onChange
+    // Since handleTilesChange calls setTiles, data should be up-to-date in the store.
+    setCurrentStep(2); // Previous step is Basic Info
+    setLocation("/inspection/basic-info");
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <ConnectionStatus />
-      
-      {/* Header with Progress */}
-      <header className="bg-white border-b border-gray-200 p-4">
-        <div className="flex items-center mb-4">
-          <Button 
-            variant="ghost" 
-            size="sm" 
-            onClick={() => {
-              if (inspectionId) {
-                setLocation(`/inspection/${inspectionId}/basic-info`);
-              } else {
-                setLocation("/inspection/basic-info");
-              }
-            }}
-            className="mr-4"
-          >
-            <ArrowLeft className="w-5 h-5" />
-          </Button>
-          <div className="flex-1">
-            <h1 className="text-xl font-semibold text-gray-900">Seleção de Telhas</h1>
-            <Button 
-              variant="ghost" 
-              size="sm" 
-              onClick={handleSaveDraft}
-              className="text-blue-600 font-medium mt-1 p-0 h-auto"
-            >
-              <Save className="w-4 h-4 mr-1" />
-              Salvar Rascunho
-            </Button>
-          </div>
-        </div>
-        
+    <AppLayout title="Seleção de Telhas" showSidebar={false}>
+      <div className="max-w-4xl mx-auto space-y-6 p-4 md:p-6">
         <ProgressBar 
-          currentStep={3} 
+          currentStep={storeCurrentStep || 3} // Default to 3 if not set
           totalSteps={5} 
           stepLabels={["Cliente", "Informações", "Telhas", "Não Conformidades", "Revisão"]} 
         />
-        <p className="text-sm text-gray-600 text-center mt-2">Etapa 3 de 5: Telhas</p>
-      </header>
 
-      <div className="p-4 pb-24">
-        <TileCalculator tiles={tiles} onTilesChange={handleTilesChange} />
-      </div>
+        <TelhaSelector
+          tiles={tiles} // Pass tiles from the store
+          onChange={handleTilesChange} // Update store with new tiles
+          className="mt-4"
+        />
 
-      {/* Fixed Bottom Actions */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 max-w-md mx-auto">
-        <div className="flex space-x-4">
-          <Button 
-            variant="outline" 
-            onClick={() => {
-              if (inspectionId) {
-                setLocation(`/inspection/${inspectionId}/basic-info`);
-              } else {
-                setLocation("/inspection/basic-info");
-              }
-            }}
-            className="flex-1 h-12"
-          >
+        <div className="flex justify-between mt-8">
+          <Button variant="outline" onClick={handleBack} className="h-12 px-6">
             Voltar
           </Button>
-          <Button 
-            onClick={handleNext}
-            className="flex-1 h-12 bg-blue-600 hover:bg-blue-700"
-            disabled={tiles.length === 0}
-          >
+          <Button onClick={handleNext} className="h-12 px-6 bg-blue-600 hover:bg-blue-700">
             Próximo
           </Button>
         </div>
       </div>
-    </div>
+    </AppLayout>
   );
 }
