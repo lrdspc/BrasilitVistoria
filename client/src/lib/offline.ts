@@ -1,262 +1,114 @@
-import type { Inspection, Tile, NonConformity, Client } from "@shared/schema";
+import { db, SyncQueueItem } from './database';
+import { offlineStorageService } from './offline-storage'; // Import the refactored service
+import type { Inspection, Client as AppClient } from "@shared/schema"; // Assuming these are the types for API interaction
 
-// IndexedDB wrapper for offline storage
-class OfflineStorage {
-  private dbName = "vigitel_offline";
-  private version = 1;
-  private db: IDBDatabase | null = null;
+// Re-export the offlineStorageService as offlineStorage for consistent public API
+export const offlineStorage = offlineStorageService;
 
-  async init(): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const request = indexedDB.open(this.dbName, this.version);
+// --- SYNC LOGIC ---
 
-      request.onerror = () => reject(request.error);
-      request.onsuccess = () => {
-        this.db = request.result;
-        resolve();
-      };
+// Placeholder for actual API calls
+const simulateApiCall = async (item: SyncQueueItem): Promise<{ success: boolean, serverId?: string | number, error?: string }> => {
+  console.log(`Simulating API call for ${item.type} - Local ID: ${item.localId}`, item.data);
+  await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate network delay
 
-      request.onupgradeneeded = (event) => {
-        const db = (event.target as IDBOpenDBRequest).result;
+  // Simulate success for create/update operations, and provide a mock serverId
+  if (item.type.startsWith('create_') || item.type.startsWith('update_')) {
+    // Simulate some failures for testing retries
+    if (item.localId && item.localId % 5 === 0 && item.retries < 2) { // Fail for items with localId divisible by 5, for first 2 retries
+        console.warn(`Simulated API failure for ${item.type} - Local ID: ${item.localId}`);
+        return { success: false, error: "Simulated network error" };
+    }
+    return { success: true, serverId: `${item.type.split('_')[1]}_server_${item.localId || Date.now()}` };
+  }
+  // Add more specific simulation for other types like 'upload_photo' if needed
+  return { success: true };
+};
 
-        // Create object stores
-        if (!db.objectStoreNames.contains("inspections")) {
-          const inspectionStore = db.createObjectStore("inspections", { keyPath: "id", autoIncrement: true });
-          inspectionStore.createIndex("protocol", "protocol", { unique: true });
-          inspectionStore.createIndex("status", "status");
-        }
+export async function syncPendingItems(): Promise<void> {
+  console.log("Checking for pending items to sync...");
+  const pendingItems = await db.getPendingSyncItems(5); // Get items with less than 5 retries
 
-        if (!db.objectStoreNames.contains("clients")) {
-          const clientStore = db.createObjectStore("clients", { keyPath: "id", autoIncrement: true });
-          clientStore.createIndex("document", "document", { unique: true });
-        }
-
-        if (!db.objectStoreNames.contains("tiles")) {
-          const tileStore = db.createObjectStore("tiles", { keyPath: "id", autoIncrement: true });
-          tileStore.createIndex("inspectionId", "inspectionId");
-        }
-
-        if (!db.objectStoreNames.contains("nonConformities")) {
-          const ncStore = db.createObjectStore("nonConformities", { keyPath: "id", autoIncrement: true });
-          ncStore.createIndex("inspectionId", "inspectionId");
-        }
-
-        if (!db.objectStoreNames.contains("syncQueue")) {
-          db.createObjectStore("syncQueue", { keyPath: "id", autoIncrement: true });
-        }
-      };
-    });
+  if (pendingItems.length === 0) {
+    console.log("No items pending sync.");
+    return;
   }
 
-  async saveInspection(inspection: Partial<Inspection>): Promise<number> {
-    if (!this.db) throw new Error("Database not initialized");
+  console.log(`Found ${pendingItems.length} items to sync.`);
 
-    return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction(["inspections"], "readwrite");
-      const store = transaction.objectStore("inspections");
-      const request = store.add({
-        ...inspection,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-        offline: true,
+  for (const item of pendingItems) {
+    if (!item.id || item.localId === undefined) { // Ensure item.id and item.localId are defined
+        console.error("SyncQueueItem missing id or localId, skipping:", item);
+        continue;
+    }
+    try {
+      // TODO: Here you would map item.data to the expected API payload if necessary
+      // e.g. if item.type is 'create_inspection', item.data is the full inspection object.
+      // For 'update_inspection', it's also the full object.
+      // For 'create_client', item.data is the client object.
+
+      const result = await simulateApiCall(item);
+
+      if (result.success) {
+        console.log(`Successfully synced ${item.type} for local ID ${item.localId}. Server ID: ${result.serverId}`);
+        if (item.type !== 'upload_photo') { // upload_photo might have a different markAsSynced logic
+          await db.markAsSynced(
+            item.type as Extract<SyncQueueItem['type'], 'create_inspection' | 'update_inspection' | 'create_client' | 'update_client'>,
+            item.localId, // localId should be defined for these types
+            result.serverId || item.localId, // Use serverId or fallback for items not returning it
+            item.id // Pass syncQueueItem.id to ensure correct deletion
+          );
+        } else {
+          // Handle photo sync success (e.g., update photo status in db.photos and remove from queue)
+          // await db.photos.update(item.localId, { synced: true });
+          // await db.syncQueue.delete(item.id);
+           console.log(`Photo with local ID ${item.localId} synced (placeholder logic).`);
+           await db.syncQueue.delete(item.id); // Basic: just delete from queue
+        }
+      } else {
+        console.warn(`Failed to sync ${item.type} for local ID ${item.localId}. Error: ${result.error}`);
+        await db.updateSyncQueueItem(item.id, {
+          retries: (item.retries || 0) + 1,
+          lastError: result.error || "Unknown error",
+          lastAttempt: Date.now(),
+        });
+      }
+    } catch (error: any) {
+      console.error(`Error during sync for item ${item.id} (${item.type}):`, error);
+      await db.updateSyncQueueItem(item.id, {
+        retries: (item.retries || 0) + 1,
+        lastError: error?.message || "Unhandled exception during sync",
+        lastAttempt: Date.now(),
       });
-
-      request.onerror = () => reject(request.error);
-      request.onsuccess = () => resolve(request.result as number);
-    });
+    }
   }
-
-  async updateInspection(id: number, updates: Partial<Inspection>): Promise<void> {
-    if (!this.db) throw new Error("Database not initialized");
-
-    return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction(["inspections"], "readwrite");
-      const store = transaction.objectStore("inspections");
-      const getRequest = store.get(id);
-
-      getRequest.onsuccess = () => {
-        const inspection = getRequest.result;
-        if (!inspection) {
-          reject(new Error("Inspection not found"));
-          return;
-        }
-
-        const updatedInspection = {
-          ...inspection,
-          ...updates,
-          updatedAt: new Date(),
-        };
-
-        const putRequest = store.put(updatedInspection);
-        putRequest.onerror = () => reject(putRequest.error);
-        putRequest.onsuccess = () => resolve();
-      };
-
-      getRequest.onerror = () => reject(getRequest.error);
-    });
-  }
-
-  async getInspections(): Promise<Inspection[]> {
-    if (!this.db) throw new Error("Database not initialized");
-
-    return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction(["inspections"], "readonly");
-      const store = transaction.objectStore("inspections");
-      const request = store.getAll();
-
-      request.onerror = () => reject(request.error);
-      request.onsuccess = () => resolve(request.result);
-    });
-  }
-
-  async saveTile(tile: Partial<Tile>): Promise<number> {
-    if (!this.db) throw new Error("Database not initialized");
-
-    return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction(["tiles"], "readwrite");
-      const store = transaction.objectStore("tiles");
-      const request = store.add({ ...tile, offline: true });
-
-      request.onerror = () => reject(request.error);
-      request.onsuccess = () => resolve(request.result as number);
-    });
-  }
-
-  async getTilesByInspection(inspectionId: number): Promise<Tile[]> {
-    if (!this.db) throw new Error("Database not initialized");
-
-    return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction(["tiles"], "readonly");
-      const store = transaction.objectStore("tiles");
-      const index = store.index("inspectionId");
-      const request = index.getAll(inspectionId);
-
-      request.onerror = () => reject(request.error);
-      request.onsuccess = () => resolve(request.result);
-    });
-  }
-
-  async saveNonConformity(nc: Partial<NonConformity>): Promise<number> {
-    if (!this.db) throw new Error("Database not initialized");
-
-    return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction(["nonConformities"], "readwrite");
-      const store = transaction.objectStore("nonConformities");
-      const request = store.add({ ...nc, offline: true });
-
-      request.onerror = () => reject(request.error);
-      request.onsuccess = () => resolve(request.result as number);
-    });
-  }
-
-  async getNonConformitiesByInspection(inspectionId: number): Promise<NonConformity[]> {
-    if (!this.db) throw new Error("Database not initialized");
-
-    return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction(["nonConformities"], "readonly");
-      const store = transaction.objectStore("nonConformities");
-      const index = store.index("inspectionId");
-      const request = index.getAll(inspectionId);
-
-      request.onerror = () => reject(request.error);
-      request.onsuccess = () => resolve(request.result);
-    });
-  }
-
-  async saveClient(client: Partial<Client>): Promise<number> {
-    if (!this.db) throw new Error("Database not initialized");
-
-    return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction(["clients"], "readwrite");
-      const store = transaction.objectStore("clients");
-      const request = store.add({
-        ...client,
-        createdAt: new Date(),
-        offline: true,
-      });
-
-      request.onerror = () => reject(request.error);
-      request.onsuccess = () => resolve(request.result as number);
-    });
-  }
-
-  async getClients(): Promise<Client[]> {
-    if (!this.db) throw new Error("Database not initialized");
-
-    return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction(["clients"], "readonly");
-      const store = transaction.objectStore("clients");
-      const request = store.getAll();
-
-      request.onerror = () => reject(request.error);
-      request.onsuccess = () => resolve(request.result);
-    });
-  }
-
-  async addToSyncQueue(operation: string, data: any): Promise<void> {
-    if (!this.db) throw new Error("Database not initialized");
-
-    return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction(["syncQueue"], "readwrite");
-      const store = transaction.objectStore("syncQueue");
-      const request = store.add({
-        operation,
-        data,
-        timestamp: new Date(),
-      });
-
-      request.onerror = () => reject(request.error);
-      request.onsuccess = () => resolve();
-    });
-  }
-
-  async getSyncQueue(): Promise<any[]> {
-    if (!this.db) throw new Error("Database not initialized");
-
-    return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction(["syncQueue"], "readonly");
-      const store = transaction.objectStore("syncQueue");
-      const request = store.getAll();
-
-      request.onerror = () => reject(request.error);
-      request.onsuccess = () => resolve(request.result);
-    });
-  }
-
-  async clearSyncQueue(): Promise<void> {
-    if (!this.db) throw new Error("Database not initialized");
-
-    return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction(["syncQueue"], "readwrite");
-      const store = transaction.objectStore("syncQueue");
-      const request = store.clear();
-
-      request.onerror = () => reject(request.error);
-      request.onsuccess = () => resolve();
-    });
-  }
+  console.log("Sync attempt finished.");
 }
 
-export const offlineStorage = new OfflineStorage();
-
-// Connection status management
+// --- CONNECTION MANAGER --- (remains the same)
 export class ConnectionManager {
   private listeners: ((status: boolean) => void)[] = [];
-  private _isOnline: boolean = navigator.onLine;
+  private _isOnline: boolean = typeof navigator !== 'undefined' ? navigator.onLine : true;
 
   constructor() {
-    window.addEventListener("online", this.handleOnline);
-    window.addEventListener("offline", this.handleOffline);
+    if (typeof window !== 'undefined') {
+      window.addEventListener("online", this.handleOnline);
+      window.addEventListener("offline", this.handleOffline);
+    }
   }
 
   private handleOnline = () => {
     this._isOnline = true;
     this.notifyListeners(true);
+    // Optionally trigger sync when connection is restored
+    console.log("Connection restored. Attempting to sync pending items.");
+    syncPendingItems().catch(err => console.error("Error during auto-sync on connection restore:", err));
   };
 
   private handleOffline = () => {
     this._isOnline = false;
     this.notifyListeners(false);
+    console.log("Connection lost.");
   };
 
   get isOnline(): boolean {
@@ -265,6 +117,8 @@ export class ConnectionManager {
 
   addListener(callback: (status: boolean) => void): void {
     this.listeners.push(callback);
+    // Notify immediately with current status
+    // callback(this._isOnline);
   }
 
   removeListener(callback: (status: boolean) => void): void {
@@ -274,6 +128,26 @@ export class ConnectionManager {
   private notifyListeners(status: boolean): void {
     this.listeners.forEach(listener => listener(status));
   }
+
+  // Method to manually trigger a sync check
+  public forceSync = () => {
+    if (this.isOnline) {
+        console.log("Manual sync triggered.");
+        syncPendingItems().catch(err => console.error("Error during manual sync:", err));
+    } else {
+        console.warn("Cannot sync, application is offline.");
+    }
+  }
 }
 
 export const connectionManager = new ConnectionManager();
+
+// Example: Periodically try to sync or listen to app events
+// This is illustrative. Actual triggers for sync might be more complex (e.g., background sync API, service worker).
+// if (typeof window !== 'undefined') {
+//   setInterval(() => {
+//     if (connectionManager.isOnline) {
+//       syncPendingItems().catch(err => console.error("Error during periodic sync:", err));
+//     }
+//   }, 5 * 60 * 1000); // Sync every 5 minutes if online
+// }

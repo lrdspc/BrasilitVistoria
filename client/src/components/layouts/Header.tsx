@@ -123,7 +123,9 @@ export function Header({
           </h1>
           {user && (
             <p className="text-sm text-text-secondary hidden lg:block">
-              {user.department} - {user.unit}
+              {/* Supabase user object structure: user.email, user.user_metadata for custom fields */}
+              {/* Example: {user.user_metadata?.department} - {user.user_metadata?.unit} */}
+              {user.email} {/* Display email as an example */}
             </p>
           )}
         </div>
@@ -168,14 +170,16 @@ export function Header({
             <Button variant="ghost" size="sm" className="relative">
               <div className="w-8 h-8 bg-primary rounded-full flex items-center justify-center">
                 <span className="text-white text-sm font-medium">
-                  {user?.name?.charAt(0) || 'U'}
+                  {/* Supabase user: user.email?.charAt(0).toUpperCase() or user.user_metadata.name?.charAt(0) */}
+                  {user?.email?.charAt(0).toUpperCase() || 'U'}
                 </span>
               </div>
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-56">
             <div className="px-2 py-1.5">
-              <p className="text-sm font-medium">{user?.name || 'Usuário'}</p>
+              {/* Supabase user: user.user_metadata.name or user.email */}
+              <p className="text-sm font-medium">{user?.user_metadata?.name || user?.email || 'Usuário'}</p>
               <p className="text-xs text-text-secondary">{user?.email}</p>
             </div>
             <DropdownMenuSeparator />
