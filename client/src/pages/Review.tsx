@@ -66,14 +66,13 @@ export default function ReviewPage() {
     // For now, let ReportSuccess or a new flow handle reset if needed.
   };
 
-  const getSafePhotoUrl = (url: string | undefined | null): string => {
-    if (!url) return "/placeholder-image.png"; // Provide a path to a placeholder image in your public folder
-    // Basic check, can be expanded (e.g. check for http/https, data:image)
-    if (url.startsWith("data:image") || url.startsWith("http")) return url;
-    // If it's a relative path or needs prefixing for display from blob/local storage
-    // This part might need adjustment based on how photos are stored and retrieved
-    return url;
-  };
+  // getSafePhotoUrl is no longer needed if photo.previewUrl is guaranteed to be a usable URL (blob:, http:, data:)
+  // The PhotoRepresentation.previewUrl should be directly usable.
+  // If placeholder is needed for missing previewUrl, it can be done directly in JSX.
+  // const getSafePhotoUrl = (url: string | undefined | null): string => {
+  //   if (!url) return "/placeholder-image.png";
+  //   return url;
+  // };
 
 
   return (
@@ -170,13 +169,13 @@ export default function ReviewPage() {
                           <div>
                             <p className="text-xs font-medium mb-1">Fotos:</p>
                             <div className="flex flex-wrap gap-2">
-                              {nc.photos.map((photoUrl, photoIndex) => (
+                          {nc.photos.map((photo, photoIndex) => (
                                 <img
-                                  key={photoIndex}
-                                  src={getSafePhotoUrl(photoUrl)}
-                                  alt={`Foto ${photoIndex + 1} de ${nc.title}`}
+                              key={photo.id || photoIndex}
+                              src={photo.previewUrl || '/placeholder-image.png'}
+                              alt={`Foto ${photo.name || photoIndex + 1} de ${nc.title}`}
                                   className="w-20 h-20 object-cover rounded border-2 border-white shadow-sm hover:scale-150 transition-transform cursor-pointer"
-                                  onClick={() => window.open(getSafePhotoUrl(photoUrl), '_blank')}
+                              onClick={() => window.open(photo.previewUrl || '/placeholder-image.png', '_blank')}
                                 />
                               ))}
                             </div>

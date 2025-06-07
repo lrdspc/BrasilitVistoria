@@ -27,17 +27,18 @@ function Router() {
   // }, []);
 
   // Register service worker for PWA
-  useEffect(() => {
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js')
-        .then((registration) => {
-          console.log('Service Worker registered:', registration);
-        })
-        .catch((error) => {
-          console.log('Service Worker registration failed:', error);
-        });
-    }
-  }, []);
+  // This is now handled by vite-plugin-pwa with injectRegister: 'auto'
+  // useEffect(() => {
+  //   if ('serviceWorker' in navigator) {
+  //     navigator.serviceWorker.register('/sw.js') // Path might change based on plugin output
+  //       .then((registration) => {
+  //         console.log('Service Worker registered by App.tsx:', registration);
+  //       })
+  //       .catch((error) => {
+  //         console.log('Service Worker registration failed in App.tsx:', error);
+  //       });
+  //   }
+  // }, []);
 
   return (
     <Switch>

@@ -34,14 +34,15 @@ export interface SyncQueueItem {
 
 export interface OfflinePhoto {
   id?: number; // Auto-incremented primary key
-  inspectionId: number; // Foreign key to OfflineInspection (local ID)
-  nonConformityId?: string; // Could be title of NC if that's unique for an inspection, or a temp ID
-  photoDataUrl?: string; // Store photo as data URL for simplicity, or path to blob storage
-  filePath?: string; // Path if stored as a file (e.g., in Capacitor FileSystem)
+  inspectionLocalId: number; // Foreign key to OfflineInspection local id
+  nonConformityId: string | number; // Link to the NC (e.g., its local or server ID, or title if unique within inspection)
+  photoBlob: Blob; // Store the File/Blob directly. Dexie handles Blobs.
+  name?: string; // Original file name
   timestamp: number;
   synced: boolean;
-  syncAttempt?: number; // Timestamp of last sync attempt for this photo
-  syncError?: string; // Error from last photo sync attempt
+  serverId?: string; // ID from server after sync
+  syncAttempt?: number;
+  syncError?: string;
 }
 
 // 2. Create VigitelDB Class
@@ -57,11 +58,17 @@ export class VigitelDB extends Dexie {
     // 3. Define table schemas
     this.version(1).stores({
       inspections: '++id, clientId, timestamp, synced, lastModified',
-      clients: '++id, &document, name, timestamp, synced', // Added unique index for document
+      clients: '++id, &document, name, timestamp, synced',
       syncQueue: '++id, type, localId, timestamp, retries, lastAttempt',
-      photos: '++id, inspectionId, nonConformityId, timestamp, synced',
+      // No need to index photoBlob. inspectionLocalId and nonConformityId can be indexed if frequent lookups are needed.
+      photos: '++id, inspectionLocalId, nonConformityId, timestamp, synced',
     });
-
+    // Version 2: If we need to change schema, e.g. add new indexes or tables
+    // this.version(2).stores({
+    //   photos: '++id, inspectionLocalId, &nonConformityPhotoId, timestamp, synced', // Example: make a compound key unique
+    // }).upgrade(tx => {
+    //   // Migration logic if needed
+    // });
     // Future versions and migrations would go here
     // this.version(2).stores({...}).upgrade(...)
   }

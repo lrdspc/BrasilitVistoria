@@ -1,260 +1,178 @@
-const CACHE_NAME = 'vigitel-v1.0.0';
-const OFFLINE_URL = '/offline.html';
+import { clientsClaim } from 'workbox-core';
+import { precacheAndRoute, cleanupOutdatedCaches, getCacheKeyForURL } from 'workbox-precaching';
+import { registerRoute, setDefaultHandler, setCatchHandler } from 'workbox-routing';
+import { NetworkFirst, StaleWhileRevalidate, CacheFirst, NetworkOnly } from 'workbox-strategies';
+import { ExpirationPlugin } from 'workbox-expiration';
+import { CacheableResponsePlugin } from 'workbox-cacheable-response';
 
-// Assets to cache on install
-const STATIC_ASSETS = [
-  '/',
-  '/manifest.json',
-  '/offline.html',
-  // Add other critical assets here
-];
+// --- Basic Workbox Setup ---
+// This ensures the new service worker takes control immediately.
+clientsClaim();
+// self.skipWaiting() should be called by Workbox internally when precaching new assets,
+// but can be called explicitly if needed. Workbox's precaching handles this.
+// If using injectManifest, skipWaiting is often configured there.
+// For a self-written SW like this, we might need it if not using a build tool to manage SW lifecycle.
+self.skipWaiting();
 
-// API endpoints that should be cached
-const API_CACHE_PATTERNS = [
-  /^\/api\/config\//,
-  /^\/api\/clients$/,
-];
+// --- Precaching Static Assets ---
+// self.__WB_MANIFEST is a placeholder that Workbox build tools (like workbox-cli or vite-plugin-pwa)
+// will replace with a list of URLs to precache.
+// The `|| []` fallback is for development where the manifest might not be injected.
+cleanupOutdatedCaches(); // Clean up old Workbox caches
+const manifest = self.__WB_MANIFEST || [];
+precacheAndRoute(manifest);
 
-// Runtime cache patterns
-const RUNTIME_CACHE_PATTERNS = [
-  /^\/api\/inspections/,
-  /^\/api\/tiles/,
-  /^\/api\/non-conformities/,
-];
+// --- Runtime Caching Strategies ---
 
-// Install event - cache static assets
-self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME)
-      .then((cache) => {
-        console.log('Caching static assets');
-        return cache.addAll(STATIC_ASSETS);
-      })
-      .then(() => {
-        // Skip waiting to activate immediately
-        return self.skipWaiting();
-      })
-  );
-});
-
-// Activate event - clean up old caches
-self.addEventListener('activate', (event) => {
-  event.waitUntil(
-    caches.keys()
-      .then((cacheNames) => {
-        return Promise.all(
-          cacheNames.map((cacheName) => {
-            if (cacheName !== CACHE_NAME) {
-              console.log('Deleting old cache:', cacheName);
-              return caches.delete(cacheName);
-            }
-          })
-        );
-      })
-      .then(() => {
-        // Claim all clients immediately
-        return self.clients.claim();
-      })
-  );
-});
-
-// Fetch event - implement caching strategies
-self.addEventListener('fetch', (event) => {
-  const { request } = event;
-  const url = new URL(request.url);
-
-  // Skip cross-origin requests
-  if (url.origin !== location.origin) {
-    return;
-  }
-
-  // Handle navigation requests
-  if (request.mode === 'navigate') {
-    event.respondWith(
-      fetch(request)
-        .catch(() => {
-          return caches.match(OFFLINE_URL);
-        })
-    );
-    return;
-  }
-
-  // Handle API requests
-  if (url.pathname.startsWith('/api/')) {
-    event.respondWith(handleApiRequest(request));
-    return;
-  }
-
-  // Handle static assets
-  event.respondWith(
-    caches.match(request)
-      .then((response) => {
-        if (response) {
-          return response;
-        }
-
-        return fetch(request)
-          .then((response) => {
-            // Don't cache non-successful responses
-            if (!response || response.status !== 200 || response.type !== 'basic') {
-              return response;
-            }
-
-            // Clone the response for caching
-            const responseToCache = response.clone();
-
-            caches.open(CACHE_NAME)
-              .then((cache) => {
-                cache.put(request, responseToCache);
-              });
-
-            return response;
-          });
-      })
-  );
-});
-
-// Handle API requests with network-first strategy
-async function handleApiRequest(request) {
-  const url = new URL(request.url);
-  
-  // Check if this endpoint should be cached
-  const shouldCache = API_CACHE_PATTERNS.some(pattern => pattern.test(url.pathname)) ||
-                     RUNTIME_CACHE_PATTERNS.some(pattern => pattern.test(url.pathname));
-
-  if (!shouldCache) {
-    // Just pass through for non-cached endpoints
-    return fetch(request);
-  }
-
-  try {
-    // Try network first
-    const response = await fetch(request);
-    
-    // Cache successful GET responses
-    if (request.method === 'GET' && response.ok) {
-      const cache = await caches.open(CACHE_NAME);
-      cache.put(request, response.clone());
-    }
-    
-    return response;
-  } catch (error) {
-    // Network failed, try cache for GET requests
-    if (request.method === 'GET') {
-      const cachedResponse = await caches.match(request);
-      if (cachedResponse) {
-        return cachedResponse;
-      }
-    }
-    
-    // Return error response for failed POST/PUT/DELETE
-    return new Response(
-      JSON.stringify({ 
-        message: 'Offline - dados serão sincronizados quando a conexão for restaurada',
-        offline: true 
+// 1. APIs (/api/)
+registerRoute(
+  ({ url }) => url.pathname.startsWith('/api/'),
+  new NetworkFirst({
+    cacheName: 'api-cache',
+    plugins: [
+      new ExpirationPlugin({
+        maxEntries: 100, // Increased from 50 for more flexibility
+        maxAgeSeconds: 24 * 60 * 60, // Cache API responses for 1 day (was 6 hours)
       }),
-      {
-        status: 503,
-        statusText: 'Service Unavailable',
-        headers: { 'Content-Type': 'application/json' }
-      }
-    );
-  }
-}
+      new CacheableResponsePlugin({
+        statuses: [0, 200], // Cache opaque responses and successful responses
+      }),
+    ],
+  })
+);
 
+// 2. Images (png, gif, jpg, jpeg, svg, webp)
+registerRoute(
+  ({ request }) => request.destination === 'image',
+  // /\.(?:png|gif|jpg|jpeg|svg|webp)$/i, // More specific regex if needed
+  new CacheFirst({
+    cacheName: 'image-cache',
+    plugins: [
+      new ExpirationPlugin({
+        maxEntries: 200, // Increased from 100
+        maxAgeSeconds: 30 * 24 * 60 * 60, // 30 Days
+      }),
+      new CacheableResponsePlugin({
+        statuses: [0, 200],
+      }),
+    ],
+  })
+);
+
+// 3. Google Fonts (stylesheets and webfonts)
+// Cache the Google Fonts stylesheets with a StaleWhileRevalidate strategy.
+registerRoute(
+  ({url}) => url.origin === 'https://fonts.googleapis.com',
+  new StaleWhileRevalidate({
+    cacheName: 'google-fonts-stylesheets',
+  })
+);
+
+// Cache the Google Fonts webfont files with a CacheFirst strategy for 1 year.
+registerRoute(
+  ({url}) => url.origin === 'https://fonts.gstatic.com',
+  new CacheFirst({
+    cacheName: 'google-fonts-webfonts',
+    plugins: [
+      new CacheableResponsePlugin({
+        statuses: [0, 200],
+      }),
+      new ExpirationPlugin({
+        maxAgeSeconds: 365 * 24 * 60 * 60, // 1 Year
+        maxEntries: 30,
+      }),
+    ],
+  })
+);
+
+// 4. Offline Fallback Page
+// Precaching the offline page is the most reliable way.
+// Ensure '/offline.html' is part of your `self.__WB_MANIFEST` or add it explicitly:
+// precacheAndRoute(manifest.concat([{ url: '/offline.html', revision: null }]));
+
+// If a navigation request fails (e.g., user is offline), serve the precached offline page.
+// This catch handler will respond to failed navigation requests.
+const offlineFallbackPage = '/offline.html'; // Ensure this is precached
+
+// Register a navigation route that uses NetworkOnly by default.
+registerRoute(
+  ({ request }) => request.mode === 'navigate',
+  new NetworkOnly({
+    plugins: [
+      // Optional: Broadcast update when a navigation request is successfully fetched from network.
+      // new BroadcastUpdatePlugin(),
+    ],
+  })
+);
+
+// Catch handler for all failed requests, especially navigations.
+setCatchHandler(async ({ event }) => {
+  // Return the precached offline page for navigation errors
+  if (event.request.mode === 'navigate') {
+    const precachedOfflineUrl = getCacheKeyForURL(offlineFallbackPage);
+    if (precachedOfflineUrl) {
+        const cache = await self.caches.open(workbox.core.cacheNames.precache);
+        return await cache.match(precachedOfflineUrl) || Response.error();
+    }
+  }
+  // For other types of failed requests, just return an error response
+  return Response.error();
+});
+
+
+// --- Optional: Default handler for non-cached assets (if not covered by precache) ---
+// This ensures that requests not matching any route will still go to the network.
+// setDefaultHandler(new NetworkOnly());
+
+
+// --- Logging ---
+console.log('Vigitel Service Worker with Workbox installed and configured.');
+
+// --- Existing Features to re-evaluate or remove ---
+// The old manual install, activate, and fetch handlers are removed as Workbox handles these.
+
+// Background sync and Push notifications were in the old SW.
+// They are not directly part of Workbox caching strategies but can be used alongside Workbox.
+// For now, commenting them out to focus on caching. They can be re-added and potentially use Workbox utilities.
+
+/*
 // Background sync for offline actions
 self.addEventListener('sync', (event) => {
   if (event.tag === 'background-sync') {
-    event.waitUntil(doBackgroundSync());
+    // event.waitUntil(doBackgroundSync()); // Define doBackgroundSync
   }
 });
-
-async function doBackgroundSync() {
-  console.log('Background sync triggered');
-  
-  try {
-    // Get pending sync data from IndexedDB
-    const pendingData = await getPendingSyncData();
-    
-    for (const item of pendingData) {
-      try {
-        await syncItem(item);
-      } catch (error) {
-        console.error('Failed to sync item:', error);
-      }
-    }
-    
-    // Clear synced data
-    await clearSyncedData();
-  } catch (error) {
-    console.error('Background sync failed:', error);
-  }
-}
-
-// Placeholder functions for IndexedDB operations
-async function getPendingSyncData() {
-  // In production, this would read from IndexedDB
-  return [];
-}
-
-async function syncItem(item) {
-  // In production, this would sync the item to the server
-  console.log('Syncing item:', item);
-}
-
-async function clearSyncedData() {
-  // In production, this would clear synced data from IndexedDB
-  console.log('Clearing synced data');
-}
 
 // Message handling for manual sync triggers
 self.addEventListener('message', (event) => {
-  if (event.data && event.data.type === 'SKIP_WAITING') {
-    self.skipWaiting();
+  if (event.data && event.data.type === 'SKIP_WAITING_MESSAGE') { // Renamed to avoid conflict if Workbox uses SKIP_WAITING
+    // self.skipWaiting(); // This is handled by Workbox or called above
   }
-  
   if (event.data && event.data.type === 'FORCE_SYNC') {
-    event.waitUntil(doBackgroundSync());
+    // event.waitUntil(doBackgroundSync());
   }
 });
 
-// Push notification handling (for future implementation)
+// Push notification handling
 self.addEventListener('push', (event) => {
-  const options = {
-    body: event.data ? event.data.text() : 'Nova notificação VIGITEL',
-    icon: '/icon-192x192.png',
-    badge: '/icon-96x96.png',
-    vibrate: [100, 50, 100],
-    data: {
-      dateOfArrival: Date.now(),
-      primaryKey: 1
-    },
-    actions: [
-      {
-        action: 'explore',
-        title: 'Ver detalhes',
-        icon: '/icon-192x192.png'
-      },
-      {
-        action: 'close',
-        title: 'Fechar',
-        icon: '/icon-192x192.png'
-      }
-    ]
-  };
-
-  event.waitUntil(
-    self.registration.showNotification('VIGITEL', options)
-  );
+  // ... push logic ...
 });
 
 // Notification click handling
 self.addEventListener('notificationclick', (event) => {
-  event.notification.close();
-
-  if (event.action === 'explore') {
-    event.waitUntil(
-      clients.openWindow('/dashboard')
-    );
-  }
+  // ... notification click logic ...
 });
+*/
+
+// Ensure this service worker activates quickly
+// self.addEventListener('message', (event) => {
+//   if (event.data && event.data.type === 'SKIP_WAITING') {
+//     self.skipWaiting(); // Already called above if needed
+//   }
+// });
+// This is a common pattern, but workbox-window can also handle this from the client side.
+// With clientsClaim() and skipWaiting() at the top, this specific message listener for SKIP_WAITING might be redundant.
+// Workbox's build process often injects skipWaiting and clientsClaim calls.
+// Since we are writing it manually, explicit calls are good.
+// If using vite-plugin-pwa, these are typically configured in the plugin options.
+// Workbox also has its own message handling for skipWaiting if using workbox-window.

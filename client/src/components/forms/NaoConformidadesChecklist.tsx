@@ -20,13 +20,15 @@ export interface AvailableNonConformity {
 }
 
 // This type represents a non-conformity that *has been* selected and possibly modified
+import type { PhotoRepresentation } from '@/stores/vistoriaStore'; // Import the new Photo type
+import type { PhotoItem as PhotoUploadItem } from '@/components/PhotoUpload'; // Type from PhotoUpload
+
 export interface SelectedNonConformity {
-  title: string; // Should match title from AvailableNonConformity
+  id: string | number; // Added id to match store's NonConformity more closely
+  title: string;
   description: string;
   notes: string;
-  photos: string[];
-  // 'selected' is implicit by being in the selectedNonConformities array
-  // 'id' or 'uniqueKey' might be needed if titles are not unique, or to link to AvailableNonConformity's id
+  photos: PhotoRepresentation[]; // Use the new PhotoRepresentation
 }
 
 interface NaoConformidadesChecklistProps {
@@ -58,9 +60,11 @@ export function NaoConformidadesChecklist({
       });
     } else {
       const availableItem = availableItems.find(item => item.title === itemTitle);
+      const newNCId = `local-nc-checklist-${Date.now()}`; // Create a temporary ID for selection context
       updated = [
         ...selectedNonConformities,
         {
+          id: newNCId,
           title: itemTitle,
           description: currentDescription || availableItem?.defaultDescription || '',
           notes: '',
@@ -73,9 +77,19 @@ export function NaoConformidadesChecklist({
     onChange(updated);
   };
 
-  const handleUpdateField = (itemTitle: string, field: keyof SelectedNonConformity, value: any) => {
+  const handleUpdateField = (ncId: string | number, field: keyof Omit<SelectedNonConformity, 'id'>, value: any) => {
     const updated = selectedNonConformities.map(nc => {
-      if (nc.title === itemTitle) {
+      if (nc.id === ncId) {
+        if (field === 'photos') { // Special handling for photos if they come from PhotoUpload
+          const newPhotos = (value as PhotoUploadItem[]).map(puItem => ({
+            id: puItem.id || `local-photo-${Date.now()}-${Math.random()}`,
+            file: puItem.file,
+            previewUrl: puItem.previewUrl,
+            name: puItem.name,
+            // serverUrl, localDbId, isUploaded, error will be set later
+          } as PhotoRepresentation));
+          return { ...nc, photos: newPhotos };
+        }
         return { ...nc, [field]: value };
       }
       return nc;
@@ -83,20 +97,20 @@ export function NaoConformidadesChecklist({
     onChange(updated);
   };
 
-  const toggleExpanded = (itemTitle: string) => {
+  const toggleExpanded = (itemTitleOrId: string | number) => { // Can use title or ID
     setExpandedItems(prev => {
       const newSet = new Set(prev);
-      if (newSet.has(itemTitle)) {
-        newSet.delete(itemTitle);
+      if (newSet.has(String(itemTitleOrId))) {
+        newSet.delete(String(itemTitleOrId));
       } else {
-        newSet.add(itemTitle);
+        newSet.add(String(itemTitleOrId));
       }
       return newSet;
     });
   };
 
   const selectedCount = selectedNonConformities.length;
-  const totalPhotos = selectedNonConformities.reduce((sum, nc) => sum + nc.photos.length, 0);
+  const totalPhotos = selectedNonConformities.reduce((sum, nc) => sum + (nc.photos?.length || 0), 0);
 
   return (
     <div className={className}>
@@ -136,52 +150,53 @@ export function NaoConformidadesChecklist({
 
         {/* Non-Conformities List */}
         <div className="space-y-3">
-          {availableItems.map((item) => {
-            const currentSelectedItem = selectedNonConformities.find(nc => nc.title === item.title);
+          {availableItems.map((availableNcItem) => {
+            const currentSelectedItem = selectedNonConformities.find(nc => nc.title === availableNcItem.title);
             const isSelected = !!currentSelectedItem;
+            const ncIdToUse = currentSelectedItem?.id || availableNcItem.id; // Use selected item's ID if available
 
             return (
               <Card
-                key={item.id || item.title} // Use item.id if available and unique
+                key={availableNcItem.id}
                 className={cn(
                   "transition-all duration-200",
                   isSelected && "border-red-200 bg-red-50"
                 )}
               >
                 <Collapsible
-                  open={expandedItems.has(item.title)}
-                  onOpenChange={() => toggleExpanded(item.title)}
+                  open={expandedItems.has(String(ncIdToUse))}
+                  onOpenChange={() => toggleExpanded(ncIdToUse)}
                 >
                   <div className="p-4">
                     <div className="flex items-start space-x-3">
                       <Checkbox
                         checked={isSelected}
-                        onCheckedChange={() => handleToggleSelected(item.title, item.defaultDescription)}
+                        onCheckedChange={() => handleToggleSelected(availableNcItem.title, availableNcItem.defaultDescription)}
                         className="mt-1"
-                        id={`nc-${item.id || item.title}`}
+                        id={`nc-check-${availableNcItem.id}`}
                       />
                       <div className="flex-1">
                         <CollapsibleTrigger asChild>
                           <Button
                             variant="ghost"
                             className="w-full justify-start p-0 h-auto font-medium text-left"
-                            aria-controls={`content-${item.id || item.title}`}
+                            aria-controls={`content-${availableNcItem.id}`}
                           >
-                            <Label htmlFor={`nc-${item.id || item.title}`} className="cursor-pointer w-full text-left">
-                              {item.title}
+                            <Label htmlFor={`nc-check-${availableNcItem.id}`} className="cursor-pointer w-full text-left">
+                              {availableNcItem.title}
                             </Label>
                           </Button>
                         </CollapsibleTrigger>
 
                         {isSelected && currentSelectedItem && (
                           <div className="mt-2 flex items-center space-x-4 text-sm text-gray-600">
-                            {currentSelectedItem.photos.length > 0 && (
+                            {(currentSelectedItem.photos?.length || 0) > 0 && (
                               <div className="flex items-center space-x-1">
                                 <Camera className="w-4 h-4" />
                                 <span>{currentSelectedItem.photos.length} foto{currentSelectedItem.photos.length !== 1 ? 's' : ''}</span>
                               </div>
                             )}
-                            {currentSelectedItem.notes && (
+                            {currentSelectedItem.notes && currentSelectedItem.notes.trim() !== '' && (
                               <div className="flex items-center space-x-1">
                                 <FileText className="w-4 h-4" />
                                 <span>Com observações</span>
@@ -194,7 +209,7 @@ export function NaoConformidadesChecklist({
                   </div>
 
                   {isSelected && currentSelectedItem && (
-                    <CollapsibleContent id={`content-${item.id || item.title}`}>
+                    <CollapsibleContent id={`content-${availableNcItem.id}`}>
                       <div className="px-4 pb-4 space-y-4 border-t border-red-200">
                         {/* Description */}
                         <div>
@@ -202,7 +217,7 @@ export function NaoConformidadesChecklist({
                           <Textarea
                             placeholder="Descreva detalhadamente a não conformidade identificada..."
                             value={currentSelectedItem.description}
-                            onChange={(e) => handleUpdateField(item.title, 'description', e.target.value)}
+                            onChange={(e) => handleUpdateField(currentSelectedItem.id, 'description', e.target.value)}
                             className="mt-1"
                             rows={3}
                           />
@@ -214,8 +229,8 @@ export function NaoConformidadesChecklist({
                             Fotos da Não Conformidade (Máx. 3)
                           </Label>
                           <PhotoUpload
-                            photos={currentSelectedItem.photos}
-                            onChange={(photos) => handleUpdateField(item.title, 'photos', photos)}
+                            photos={currentSelectedItem.photos as PhotoUploadItem[]} // Cast needed as PhotoRepresentation is wider
+                            onChange={(newPhotosFromUpload) => handleUpdateField(currentSelectedItem.id, 'photos', newPhotosFromUpload)}
                             maxPhotos={3}
                             className="mt-1"
                           />
@@ -230,13 +245,13 @@ export function NaoConformidadesChecklist({
                             <VoiceInput
                               onTranscript={(text) => {
                                 const newNotes = currentSelectedItem.notes ? `${currentSelectedItem.notes}\n${text}` : text;
-                                handleUpdateField(item.title, 'notes', newNotes);
+                                handleUpdateField(currentSelectedItem.id, 'notes', newNotes);
                               }}
                             />
                             <Textarea
                               placeholder="Digite observações adicionais ou use o microfone acima..."
                               value={currentSelectedItem.notes}
-                              onChange={(e) => handleUpdateField(item.title, 'notes', e.target.value)}
+                              onChange={(e) => handleUpdateField(currentSelectedItem.id, 'notes', e.target.value)}
                               rows={3}
                             />
                           </div>
